@@ -129,21 +129,40 @@ class MusicRepositoryImpl @Inject constructor(
     private fun normalizePath(path: String): String =
         runCatching { File(path).canonicalPath }.getOrElse { File(path).absolutePath }
 
-    /** Cached directory filter — recomputed only when allowed/blocked dirs preferences change. */
+    /** Cached directory filter — recomputed when allowed/blocked dirs preferences change or when the set of song folders changes. */
     data class CachedDirFilter(val allowedParentDirs: List<String> = emptyList(), val applyFilter: Boolean = false)
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val cachedDirFilter: StateFlow<CachedDirFilter> = combine(
         userPreferencesRepository.allowedDirectoriesFlow,
         userPreferencesRepository.blockedDirectoriesFlow
-    ) { allowed, blocked ->
-        val (dirs, apply) = DirectoryFilterUtils.computeAllowedParentDirs(
-            allowedDirs = allowed,
-            blockedDirs = blocked,
-            getAllParentDirs = { musicDao.getDistinctParentDirectories() },
-            normalizePath = ::normalizePath
-        )
-        CachedDirFilter(dirs, apply)
-    }.stateIn(repositoryScope, SharingStarted.Eagerly, CachedDirFilter())
+    ) { allowed, blocked -> allowed to blocked }
+        .flatMapLatest { (allowed, blocked) ->
+            if (blocked.isEmpty()) {
+                // No blocked dirs => no directory filter is applied. Avoid observing the
+                // songs table at all in this (common) case.
+                flowOf(CachedDirFilter(emptyList(), false))
+            } else {
+                // Recompute whenever the set of song folders changes (e.g. after a sync),
+                // so the filter never freezes at a stale/empty snapshot. Previously this
+                // was computed once, eagerly at construction — before the first sync — which
+                // on some devices left allowedParentDirs empty while applyFilter stayed true,
+                // making queue-building queries (getSongIdsSorted) return nothing and collapse
+                // the playback queue to just the tapped song.
+                musicDao.getDistinctParentDirectoriesFlow()
+                    .distinctUntilChanged()
+                    .map { parentDirs ->
+                        val (dirs, apply) = DirectoryFilterUtils.computeAllowedParentDirs(
+                            allowedDirs = allowed,
+                            blockedDirs = blocked,
+                            getAllParentDirs = { parentDirs },
+                            normalizePath = ::normalizePath
+                        )
+                        CachedDirFilter(dirs, apply)
+                    }
+            }
+        }
+        .stateIn(repositoryScope, SharingStarted.Eagerly, CachedDirFilter())
 
     private fun ensureTelegramDownloadSyncObserverStarted() {
         if (telegramDownloadSyncObserverStarted) return
@@ -295,6 +314,10 @@ class MusicRepositoryImpl @Inject constructor(
         return musicDao.getSongCount().distinctUntilChanged()
     }
 
+    override fun getCloudSongCountFlow(): Flow<Int> {
+        return musicDao.getCloudSongCount().distinctUntilChanged()
+    }
+
     override suspend fun getRandomSongs(limit: Int): List<Song> = withContext(Dispatchers.IO) {
         val filter = cachedDirFilter.value
         musicDao.getRandomSongs(limit, filter.allowedParentDirs, filter.applyFilter).map { it.toSong() }
@@ -385,10 +408,11 @@ class MusicRepositoryImpl @Inject constructor(
             telegramDao.insertSongs(entities)
             telegramRepository.warmUpArtworkForSongs(entities)
         }
-        // Trigger sync to update main DB (and remove deleted songs)
-        androidx.work.WorkManager.getInstance(context).enqueue(
-            com.theveloper.pixelplay.data.worker.SyncWorker.incrementalSyncWork()
-        )
+        // Sync into the unified `songs` table is triggered later by saveTelegramChannel().
+        // We deliberately do NOT enqueue here: the SyncWorker gates Telegram processing on
+        // an existing channel row (telegramDao.getAllChannels()), and on first add this
+        // function runs BEFORE the channel entity is persisted. Triggering here would race
+        // and skip the sync, leaving songs invisible until the next app launch.
     }
 
     /**
@@ -475,6 +499,10 @@ class MusicRepositoryImpl @Inject constructor(
         return musicDao.getArtistById(artistId).map { it?.toArtist() }
     }
 
+    override suspend fun getArtistIdByName(name: String): Long? = withContext(Dispatchers.IO) {
+        musicDao.getArtistIdByName(name)
+    }
+
     override fun getArtistsForSong(songId: Long): Flow<List<Artist>> {
         return musicDao.getArtistsForSong(songId)
             .map { entities -> entities.map { it.toArtist() } }
@@ -534,7 +562,7 @@ class MusicRepositoryImpl @Inject constructor(
 
     // --- Métodos de Búsqueda ---
 
-    override fun searchSongs(query: String): Flow<List<Song>> {
+    override fun searchSongs(query: String, titleOnly: Boolean): Flow<List<Song>> {
         if (query.isBlank()) return flowOf(emptyList())
         return combine(
             userPreferencesRepository.allowedDirectoriesFlow,
@@ -550,7 +578,8 @@ class MusicRepositoryImpl @Inject constructor(
                         query = query,
                         allowedParentDirs = allowedParentDirs,
                         applyDirectoryFilter = applyDirectoryFilter,
-                        limit = SEARCH_RESULTS_LIMIT
+                        limit = SEARCH_RESULTS_LIMIT,
+                        titleOnly = titleOnly
                     )
                 )
             }.flatMapLatest { it }
@@ -607,7 +636,7 @@ class MusicRepositoryImpl @Inject constructor(
                         }
                     }
                 }
-                SearchFilterType.SONGS -> searchSongs(query).map { songs -> songs.map { SearchResultItem.SongItem(it) } }
+                SearchFilterType.SONGS -> searchSongs(query, titleOnly = true).map { songs -> songs.map { SearchResultItem.SongItem(it) } }
                 SearchFilterType.ALBUMS -> searchAlbums(query, minTracks).map { albums -> albums.map { SearchResultItem.AlbumItem(it) } }
                 SearchFilterType.ARTISTS -> searchArtists(query).map { artists -> artists.map { SearchResultItem.ArtistItem(it) } }
                 SearchFilterType.PLAYLISTS -> playlistsFlow.map { playlists -> playlists.map { SearchResultItem.PlaylistItem(it) } }
@@ -659,8 +688,15 @@ class MusicRepositoryImpl @Inject constructor(
                             applyDirectoryFilter = applyDirectoryFilter
                         )
                     } else {
-                        musicDao.getSongsByGenre(
+                        // getSongsByGenreContaining uses a LIKE query so that a song stored as
+                        // "Rock, Pop" is returned when browsing either "Rock" or "Pop".
+                        musicDao.getSongsByGenreContaining(
                             genreName = genreName,
+                            genrePrefix = "$genreName,%",          // "Rock,..." / "Rock, ..."
+                            genreSuffixWithSpace = "%, $genreName", // "..., Rock"
+                            genreSuffix = "%,$genreName",          // "...,Rock"
+                            genreMiddleWithSpace = "%, $genreName,%", // "..., Rock,..."
+                            genreMiddle = "%,$genreName,%",        // "...,Rock,..."
                             allowedParentDirs = allowedParentDirs,
                             applyDirectoryFilter = applyDirectoryFilter
                         )
@@ -848,6 +884,7 @@ class MusicRepositoryImpl @Inject constructor(
                     ) { genreNames, hasUnknown ->
                         val knownGenres = genreNames
                             .asSequence()
+                            .flatMap { raw -> raw.split(",") } // split "Rock, Pop" → ["Rock", "Pop"]
                             .map { it.trim() }
                             .filter { it.isNotBlank() }
                             .map { buildGenre(it) }
@@ -985,6 +1022,7 @@ class MusicRepositoryImpl @Inject constructor(
         val allChannels = telegramDao.getAllChannels().first()
         allChannels.forEach { channel ->
             telegramRepository.deleteAppPlaylistForTelegramChannel(channel.chatId)
+            telegramRepository.deleteAllTopicPlaylistsForChannel(channel.chatId)
         }
 
         musicDao.clearAllTelegramSongs()
@@ -1019,6 +1057,12 @@ class MusicRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Log.e("MusicRepo", "Failed to update app playlist for Telegram channel ${channel.chatId}", e)
         }
+
+        // Trigger the unified-library sync now that the channel row exists. SyncWorker's
+        // Telegram phase is gated on telegramDao.getAllChannels() being non-empty, so this
+        // is the earliest moment the sync can succeed. KEEP (not REPLACE) ensures we never
+        // cancel a heavier full/rebuild that might be running under the same unique name.
+        requestTelegramUnifiedSync()
     }
 
     override fun getAllTelegramChannels(): Flow<List<TelegramChannelEntity>> {
@@ -1091,10 +1135,15 @@ class MusicRepositoryImpl @Inject constructor(
         // Create/update the per-topic app playlist
         telegramRepository.updateAppPlaylistForTopic(chatId, threadId, topicName, entities)
 
-        // Sync main music DB
-        androidx.work.WorkManager.getInstance(context).enqueue(
-            com.theveloper.pixelplay.data.worker.SyncWorker.incrementalSyncWork()
-        )
+        // Best-effort sync trigger: if no worker is in flight yet, KEEP enqueues a fresh
+        // incremental run that will catch the rows being committed during the topic
+        // loop. This is the safety net for forum flows that fail mid-loop and never
+        // reach the final saveTelegramChannel() call (the dashboard's syncForumChannel
+        // path in particular — its only sync trigger is the end-of-flow channel save).
+        // Subsequent topic insertions are no-ops here because the existing worker is
+        // running; the calling VM's finally block ensures a follow-up sync runs
+        // afterwards to pick up rows added past the worker's Telegram phase.
+        requestTelegramUnifiedSync()
     }
 
     override suspend fun getSongIdsSorted(
@@ -1120,6 +1169,23 @@ class MusicRepositoryImpl @Inject constructor(
             applyDirectoryFilter = filter.applyFilter,
             sortOrder = sortOption.storageKey,
             filterMode = storageFilter.toFilterMode()
+        )
+    }
+
+    override suspend fun getSongIdByContentUri(contentUri: String): Long? =
+        withContext(Dispatchers.IO) {
+            musicDao.getSongIdByContentUri(contentUri)
+        }
+
+    override fun requestTelegramUnifiedSync() {
+        // KEEP — never disturb a full/rebuild sync that shares this unique work name.
+        // If no worker is queued or running, this enqueues a fresh incremental run.
+        // If one is already in flight, we let it complete; its Telegram phase reads
+        // telegram_songs at run time and will pick up rows committed before then.
+        androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+            com.theveloper.pixelplay.data.worker.SyncWorker.WORK_NAME,
+            androidx.work.ExistingWorkPolicy.KEEP,
+            com.theveloper.pixelplay.data.worker.SyncWorker.incrementalSyncWork()
         )
     }
 }

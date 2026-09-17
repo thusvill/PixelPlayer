@@ -5,9 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +31,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.theveloper.pixelplay.presentation.components.LocalMaterialTheme
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 
 @Composable
 fun ToggleSegmentButton(
@@ -44,7 +45,6 @@ fun ToggleSegmentButton(
     activeContentColor: Color = LocalMaterialTheme.current.onPrimary,
     inactiveContentColor: Color = LocalMaterialTheme.current.onSurfaceVariant,
     activeCornerRadius: Dp = 8.dp,
-    border: BorderStroke? = null,
     onClick: () -> Unit,
     iconId: Int,
     contentDesc: String
@@ -56,7 +56,6 @@ fun ToggleSegmentButton(
         activeColor = activeColor,
         inactiveColor = inactiveColor,
         activeCornerRadius = activeCornerRadius,
-        border = border,
         onClick = onClick
     ) {
         Icon(
@@ -78,7 +77,6 @@ fun ToggleSegmentButton(
     activeContentColor: Color = LocalMaterialTheme.current.onPrimary,
     inactiveContentColor: Color = LocalMaterialTheme.current.onSurfaceVariant,
     activeCornerRadius: Dp = 8.dp,
-    border: BorderStroke? = null,
     onClick: () -> Unit,
     imageVector: ImageVector,
     contentDesc: String
@@ -90,7 +88,6 @@ fun ToggleSegmentButton(
         activeColor = activeColor,
         inactiveColor = inactiveColor,
         activeCornerRadius = activeCornerRadius,
-        border = border,
         onClick = onClick
     ) {
         Icon(
@@ -112,9 +109,11 @@ fun ToggleSegmentButton(
     activeContentColor: Color = LocalMaterialTheme.current.onPrimary,
     inactiveContentColor: Color = LocalMaterialTheme.current.primary,
     activeCornerRadius: Dp = 8.dp,
-    border: BorderStroke? = null,
     onClick: () -> Unit,
-    text: String
+    text: String,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+    textAlign: TextAlign = TextAlign.Center
 ) {
     ToggleSegmentButtonContainer(
         modifier = modifier,
@@ -123,14 +122,16 @@ fun ToggleSegmentButton(
         activeColor = activeColor,
         inactiveColor = inactiveColor,
         activeCornerRadius = activeCornerRadius,
-        border = border,
         onClick = onClick
     ) {
         Text(
             text = text,
             color = if (active) activeContentColor else inactiveContentColor,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            maxLines = maxLines,
+            overflow = overflow,
+            textAlign = textAlign
         )
     }
 }
@@ -148,7 +149,9 @@ fun ToggleSegmentButton(
     onClick: () -> Unit,
     text: String,
     imageVector: ImageVector,
-    border: BorderStroke? = null,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+    textAlign: TextAlign = TextAlign.Center
 ) {
     ToggleSegmentButtonContainer(
         modifier = modifier,
@@ -157,8 +160,7 @@ fun ToggleSegmentButton(
         activeColor = activeColor,
         inactiveColor = inactiveColor,
         activeCornerRadius = activeCornerRadius,
-        onClick = onClick,
-        border = border
+        onClick = onClick
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -176,11 +178,15 @@ fun ToggleSegmentButton(
                 text = text,
                 color = if (active) activeContentColor else inactiveContentColor,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = maxLines,
+                overflow = overflow,
+                textAlign = textAlign
             )
         }
     }
 }
+
 
 @Composable
 private fun ToggleSegmentButtonContainer(
@@ -191,37 +197,33 @@ private fun ToggleSegmentButtonContainer(
     inactiveColor: Color,
     activeCornerRadius: Dp,
     onClick: () -> Unit,
-    border: BorderStroke? = null,
-    content: @Composable () -> Unit,
+    content: @Composable () -> Unit
 ) {
     val targetBgColor = if (active) activeColor else inactiveColor
     val bgColor by animateColorAsState(
         targetValue = if (enabled) targetBgColor else targetBgColor.copy(alpha = 0.5f),
         animationSpec = tween(durationMillis = 250),
-        label = "bgColorAnimation"
+        label = ""
     )
     val cornerRadius by animateDpAsState(
         targetValue = if (active) activeCornerRadius else 8.dp,
         animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "cornerRadiusAnimation"
+        label = ""
     )
-
-
-    val shape = RoundedCornerShape(cornerRadius)
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .clip(shape)
+            .clip(RoundedCornerShape(cornerRadius))
             .background(bgColor)
-            .then(
-                if (border != null) Modifier.border(border, shape)
-                else Modifier
-            )
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Box(modifier = Modifier.graphicsLayer(alpha = if (enabled) 1f else 0.38f)) {
+        Box(
+            modifier = Modifier
+                .graphicsLayer(alpha = if (enabled) 1f else 0.38f)
+                .padding(horizontal = 10.dp)
+        ) {
             content()
         }
     }

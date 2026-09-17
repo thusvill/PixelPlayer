@@ -54,7 +54,7 @@ import java.io.File
 
 data class SettingsUiState(
     val isLoadingDirectories: Boolean = false,
-    val appLanguageTag: String = AppLanguage.SYSTEM,
+    val appLanguageTag: String = AppLanguage.SYSTEM.tag,
     val appThemeMode: String = AppThemeMode.FOLLOW_SYSTEM,
     val playerThemePreference: String = ThemePreference.ALBUM_ART,
     val albumArtPaletteStyle: AlbumArtPaletteStyle = AlbumArtPaletteStyle.default,
@@ -68,6 +68,7 @@ data class SettingsUiState(
     val launchTab: String = LaunchTab.HOME,
     val keepPlayingInBackground: Boolean = true,
     val disableCastAutoplay: Boolean = false,
+    val pauseOnVolumeZero: Boolean = false,
     val resumeOnHeadsetReconnect: Boolean = false,
     val showQueueHistory: Boolean = true,
     val isCrossfadeEnabled: Boolean = false,
@@ -96,6 +97,7 @@ data class SettingsUiState(
     val useAnimatedLyrics: Boolean = false,
     val animatedLyricsBlurEnabled: Boolean = true,
     val animatedLyricsBlurStrength: Float = 2.5f,
+    val disableBlurAllOver: Boolean = false,
     val backupInfoDismissed: Boolean = false,
     val isDataTransferInProgress: Boolean = false,
     val restorePlan: RestorePlan? = null,
@@ -109,7 +111,7 @@ data class SettingsUiState(
     val replayGainEnabled: Boolean = false,
     val replayGainUseAlbumGain: Boolean = false,
     val isSafeTokenLimitEnabled: Boolean = true,
-    val albumArtPalettePureDark: Boolean = false
+    val showScrollbar: Boolean = true
 )
 
 data class FailedSongInfo(
@@ -153,6 +155,7 @@ private sealed interface SettingsUiUpdate {
     data class Group2(
         val keepPlayingInBackground: Boolean,
         val disableCastAutoplay: Boolean,
+        val pauseOnVolumeZero: Boolean,
         val resumeOnHeadsetReconnect: Boolean,
         val showQueueHistory: Boolean,
         val isCrossfadeEnabled: Boolean,
@@ -167,10 +170,13 @@ private sealed interface SettingsUiUpdate {
         val immersiveLyricsEnabled: Boolean,
         val immersiveLyricsTimeout: Long,
         val animatedLyricsBlurEnabled: Boolean,
-        val animatedLyricsBlurStrength: Float
+        val animatedLyricsBlurStrength: Float,
+        val disableBlurAllOver: Boolean,
+        val showScrollbar: Boolean
     ) : SettingsUiUpdate
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository,
@@ -179,6 +185,7 @@ class SettingsViewModel @Inject constructor(
     private val colorSchemeProcessor: ColorSchemeProcessor,
     private val syncManager: SyncManager,
     private val aiClientFactory: AiClientFactory,
+    private val geminiModelService: com.theveloper.pixelplay.data.ai.GeminiModelService,
     private val aiUsageDao: AiUsageDao,
     private val lyricsRepository: LyricsRepository,
     private val musicRepository: MusicRepository,
@@ -270,6 +277,52 @@ class SettingsViewModel @Inject constructor(
     val openrouterSystemPrompt: StateFlow<String> = aiPreferencesRepository.openrouterSystemPrompt
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AiPreferencesRepository.DEFAULT_OPENROUTER_SYSTEM_PROMPT)
 
+    val ollamaApiKey: StateFlow<String> = aiPreferencesRepository.ollamaApiKey
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val ollamaModel: StateFlow<String> = aiPreferencesRepository.ollamaModel
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val ollamaSystemPrompt: StateFlow<String> = aiPreferencesRepository.ollamaSystemPrompt
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AiPreferencesRepository.DEFAULT_SYSTEM_PROMPT)
+
+    val customApiKey: StateFlow<String> = aiPreferencesRepository.customApiKey
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val customModel: StateFlow<String> = aiPreferencesRepository.customModel
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val customSystemPrompt: StateFlow<String> = aiPreferencesRepository.customSystemPrompt
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AiPreferencesRepository.DEFAULT_SYSTEM_PROMPT)
+    val customBaseUrl: StateFlow<String> = aiPreferencesRepository.customBaseUrl
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    val currentAiBaseUrl: StateFlow<String> = aiProvider
+        .flatMapLatest { provider ->
+            val p = AiProvider.fromString(provider)
+            if (p.hasConfigurableUrl) aiPreferencesRepository.getBaseUrl(p)
+            else flowOf("")
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    // Generation Parameters
+    val aiTemperature: StateFlow<Float> = aiPreferencesRepository.aiTemperature
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.7f)
+    val aiTopP: StateFlow<Float> = aiPreferencesRepository.aiTopP
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.95f)
+    val aiTopK: StateFlow<Int> = aiPreferencesRepository.aiTopK
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 64)
+    val aiMaxTokens: StateFlow<Int> = aiPreferencesRepository.aiMaxTokens
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 4096)
+    val aiPresencePenalty: StateFlow<Float> = aiPreferencesRepository.aiPresencePenalty
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0f)
+    val aiFrequencyPenalty: StateFlow<Float> = aiPreferencesRepository.aiFrequencyPenalty
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0f)
+
+    // Song Data Configuration
+    val aiSampleSize: StateFlow<Int> = aiPreferencesRepository.aiSampleSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 40)
+    val aiDigestMode: StateFlow<String> = aiPreferencesRepository.aiDigestMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "safe")
+    val aiIncludeExtendedFields: StateFlow<Boolean> = aiPreferencesRepository.aiIncludeExtendedFields
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     fun onAiApiKeyChange(apiKey: String) {
         viewModelScope.launch {
             val providerStr = aiProvider.value
@@ -279,8 +332,6 @@ class SettingsViewModel @Inject constructor(
             else clearModelsState(providerStr)
         }
     }
-
-
 
     // Specific on-change methods for UI binding
     fun onGeminiApiKeyChange(apiKey: String) {
@@ -346,6 +397,53 @@ class SettingsViewModel @Inject constructor(
             else clearModelsState("OPENROUTER")
         }
     }
+    fun onOllamaApiKeyChange(apiKey: String) {
+        viewModelScope.launch {
+            aiPreferencesRepository.setApiKey(AiProvider.OLLAMA, apiKey)
+            if (apiKey.isNotBlank()) fetchAvailableModels(apiKey, "OLLAMA")
+            else clearModelsState("OLLAMA")
+        }
+    }
+    fun onCustomApiKeyChange(apiKey: String) {
+        viewModelScope.launch {
+            aiPreferencesRepository.setApiKey(AiProvider.CUSTOM, apiKey)
+            if (apiKey.isNotBlank()) fetchAvailableModels(apiKey, "CUSTOM")
+            else clearModelsState("CUSTOM")
+        }
+    }
+    fun onCustomBaseUrlChange(baseUrl: String) {
+        viewModelScope.launch {
+            aiPreferencesRepository.setBaseUrl(AiProvider.CUSTOM, baseUrl)
+        }
+    }
+
+    fun onAiTemperatureChange(value: Float) {
+        viewModelScope.launch { aiPreferencesRepository.setAiTemperature(value) }
+    }
+    fun onAiTopPChange(value: Float) {
+        viewModelScope.launch { aiPreferencesRepository.setAiTopP(value) }
+    }
+    fun onAiTopKChange(value: Int) {
+        viewModelScope.launch { aiPreferencesRepository.setAiTopK(value) }
+    }
+    fun onAiMaxTokensChange(value: Int) {
+        viewModelScope.launch { aiPreferencesRepository.setAiMaxTokens(value) }
+    }
+    fun onAiPresencePenaltyChange(value: Float) {
+        viewModelScope.launch { aiPreferencesRepository.setAiPresencePenalty(value) }
+    }
+    fun onAiFrequencyPenaltyChange(value: Float) {
+        viewModelScope.launch { aiPreferencesRepository.setAiFrequencyPenalty(value) }
+    }
+    fun onAiSampleSizeChange(value: Int) {
+        viewModelScope.launch { aiPreferencesRepository.setAiSampleSize(value) }
+    }
+    fun onAiDigestModeChange(mode: String) {
+        viewModelScope.launch { aiPreferencesRepository.setAiDigestMode(mode) }
+    }
+    fun onAiIncludeExtendedFieldsChange(enabled: Boolean) {
+        viewModelScope.launch { aiPreferencesRepository.setAiIncludeExtendedFields(enabled) }
+    }
 
     fun onAiModelChange(model: String) {
         viewModelScope.launch {
@@ -363,6 +461,8 @@ class SettingsViewModel @Inject constructor(
     fun onGlmModelChange(model: String) = viewModelScope.launch { aiPreferencesRepository.setModel(AiProvider.GLM, model) }
     fun onOpenAiModelChange(model: String) = viewModelScope.launch { aiPreferencesRepository.setModel(AiProvider.OPENAI, model) }
     fun onOpenrouterModelChange(model: String) = viewModelScope.launch { aiPreferencesRepository.setModel(AiProvider.OPENROUTER, model) }
+    fun onOllamaModelChange(model: String) = viewModelScope.launch { aiPreferencesRepository.setModel(AiProvider.OLLAMA, model) }
+    fun onCustomModelChange(model: String) = viewModelScope.launch { aiPreferencesRepository.setModel(AiProvider.CUSTOM, model) }
 
     fun onAiSystemPromptChange(prompt: String) {
         viewModelScope.launch {
@@ -380,6 +480,8 @@ class SettingsViewModel @Inject constructor(
     fun onGlmSystemPromptChange(prompt: String) = viewModelScope.launch { aiPreferencesRepository.setSystemPrompt(AiProvider.GLM, prompt) }
     fun onOpenAiSystemPromptChange(prompt: String) = viewModelScope.launch { aiPreferencesRepository.setSystemPrompt(AiProvider.OPENAI, prompt) }
     fun onOpenrouterSystemPromptChange(prompt: String) = viewModelScope.launch { aiPreferencesRepository.setSystemPrompt(AiProvider.OPENROUTER, prompt) }
+    fun onOllamaSystemPromptChange(prompt: String) = viewModelScope.launch { aiPreferencesRepository.setSystemPrompt(AiProvider.OLLAMA, prompt) }
+    fun onCustomSystemPromptChange(prompt: String) = viewModelScope.launch { aiPreferencesRepository.setSystemPrompt(AiProvider.CUSTOM, prompt) }
 
     fun resetAiSystemPrompt() {
         viewModelScope.launch {
@@ -397,6 +499,8 @@ class SettingsViewModel @Inject constructor(
     fun resetGlmSystemPrompt() = viewModelScope.launch { aiPreferencesRepository.resetSystemPrompt(AiProvider.GLM) }
     fun resetOpenAiSystemPrompt() = viewModelScope.launch { aiPreferencesRepository.resetSystemPrompt(AiProvider.OPENAI) }
     fun resetOpenrouterSystemPrompt() = viewModelScope.launch { aiPreferencesRepository.resetSystemPrompt(AiProvider.OPENROUTER) }
+    fun resetOllamaSystemPrompt() = viewModelScope.launch { aiPreferencesRepository.resetSystemPrompt(AiProvider.OLLAMA) }
+    fun resetCustomSystemPrompt() = viewModelScope.launch { aiPreferencesRepository.resetSystemPrompt(AiProvider.CUSTOM) }
 
     fun clearAiUsageData() {
         viewModelScope.launch {
@@ -453,6 +557,9 @@ class SettingsViewModel @Inject constructor(
     private val _dataTransferEvents = MutableSharedFlow<String>()
     val dataTransferEvents: SharedFlow<String> = _dataTransferEvents.asSharedFlow()
 
+    private val _dataTransferProgress = MutableStateFlow<BackupTransferProgressUpdate?>(null)
+    val dataTransferProgress: StateFlow<BackupTransferProgressUpdate?> = _dataTransferProgress.asStateFlow()
+
     init {
         viewModelScope.launch {
             backupManager.getBackupHistory().collect { history ->
@@ -471,12 +578,7 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(collageAutoRotate = autoRotate) }
             }
         }
-    }
 
-    private val _dataTransferProgress = MutableStateFlow<BackupTransferProgressUpdate?>(null)
-    val dataTransferProgress: StateFlow<BackupTransferProgressUpdate?> = _dataTransferProgress.asStateFlow()
-
-    init {
         // One-time device capability check — result is cached inside HiFiCapabilityChecker
         _uiState.update {
             it.copy(
@@ -546,6 +648,7 @@ class SettingsViewModel @Inject constructor(
             combine<Any?, SettingsUiUpdate.Group2>(
                 userPreferencesRepository.keepPlayingInBackgroundFlow,
                 userPreferencesRepository.disableCastAutoplayFlow,
+                userPreferencesRepository.pauseOnVolumeZeroFlow,
                 userPreferencesRepository.resumeOnHeadsetReconnectFlow,
                 userPreferencesRepository.showQueueHistoryFlow,
                 userPreferencesRepository.isCrossfadeEnabledFlow,
@@ -560,32 +663,38 @@ class SettingsViewModel @Inject constructor(
                 userPreferencesRepository.immersiveLyricsEnabledFlow,
                 userPreferencesRepository.immersiveLyricsTimeoutFlow,
                 userPreferencesRepository.animatedLyricsBlurEnabledFlow,
-                userPreferencesRepository.animatedLyricsBlurStrengthFlow
+                userPreferencesRepository.animatedLyricsBlurStrengthFlow,
+                userPreferencesRepository.disableBlurAllOverFlow,
+                userPreferencesRepository.showScrollbarFlow
             ) { values ->
                 SettingsUiUpdate.Group2(
                     keepPlayingInBackground = values[0] as Boolean,
                     disableCastAutoplay = values[1] as Boolean,
-                    resumeOnHeadsetReconnect = values[2] as Boolean,
-                    showQueueHistory = values[3] as Boolean,
-                    isCrossfadeEnabled = values[4] as Boolean,
-                    hiFiModeEnabled = values[5] as Boolean,
-                    crossfadeDuration = values[6] as Int,
-                    persistentShuffleEnabled = values[7] as Boolean,
-                    folderBackGestureNavigation = values[8] as Boolean,
-                    lyricsSourcePreference = values[9] as LyricsSourcePreference,
-                    autoScanLrcFiles = values[10] as Boolean,
-                    blockedDirectories = @Suppress("UNCHECKED_CAST") (values[11] as Set<String>),
-                    hapticsEnabled = values[12] as Boolean,
-                    immersiveLyricsEnabled = values[13] as Boolean,
-                    immersiveLyricsTimeout = values[14] as Long,
-                    animatedLyricsBlurEnabled = values[15] as Boolean,
-                    animatedLyricsBlurStrength = values[16] as Float
+                    pauseOnVolumeZero = values[2] as Boolean,
+                    resumeOnHeadsetReconnect = values[3] as Boolean,
+                    showQueueHistory = values[4] as Boolean,
+                    isCrossfadeEnabled = values[5] as Boolean,
+                    hiFiModeEnabled = values[6] as Boolean,
+                    crossfadeDuration = values[7] as Int,
+                    persistentShuffleEnabled = values[8] as Boolean,
+                    folderBackGestureNavigation = values[9] as Boolean,
+                    lyricsSourcePreference = values[10] as LyricsSourcePreference,
+                    autoScanLrcFiles = values[11] as Boolean,
+                    blockedDirectories = @Suppress("UNCHECKED_CAST") (values[12] as Set<String>),
+                    hapticsEnabled = values[13] as Boolean,
+                    immersiveLyricsEnabled = values[14] as Boolean,
+                    immersiveLyricsTimeout = values[15] as Long,
+                    animatedLyricsBlurEnabled = values[16] as Boolean,
+                    animatedLyricsBlurStrength = values[17] as Float,
+                    disableBlurAllOver = values[18] as Boolean,
+                    showScrollbar = values[19] as Boolean
                 )
             }.collect { update ->
                 _uiState.update { state ->
                     state.copy(
                         keepPlayingInBackground = update.keepPlayingInBackground,
                         disableCastAutoplay = update.disableCastAutoplay,
+                        pauseOnVolumeZero = update.pauseOnVolumeZero,
                         resumeOnHeadsetReconnect = update.resumeOnHeadsetReconnect,
                         showQueueHistory = update.showQueueHistory,
                         isCrossfadeEnabled = update.isCrossfadeEnabled,
@@ -600,7 +709,9 @@ class SettingsViewModel @Inject constructor(
                         immersiveLyricsEnabled = update.immersiveLyricsEnabled,
                         immersiveLyricsTimeout = update.immersiveLyricsTimeout,
                         animatedLyricsBlurEnabled = update.animatedLyricsBlurEnabled,
-                        animatedLyricsBlurStrength = update.animatedLyricsBlurStrength
+                        animatedLyricsBlurStrength = update.animatedLyricsBlurStrength,
+                        disableBlurAllOver = update.disableBlurAllOver,
+                        showScrollbar = update.showScrollbar
                     )
                 }
             }
@@ -835,6 +946,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setShowScrollbar(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setShowScrollbar(enabled)
+        }
+    }
+
     fun setLaunchTab(tab: String) {
         viewModelScope.launch {
             userPreferencesRepository.setLaunchTab(tab)
@@ -850,6 +967,12 @@ class SettingsViewModel @Inject constructor(
     fun setDisableCastAutoplay(disabled: Boolean) {
         viewModelScope.launch {
             userPreferencesRepository.setDisableCastAutoplay(disabled)
+        }
+    }
+
+    fun setPauseOnVolumeZero(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setPauseOnVolumeZero(enabled)
         }
     }
 
@@ -994,6 +1117,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setDisableBlurAllOver(disabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setDisableBlurAllOver(disabled)
+        }
+    }
+
     fun refreshLibrary() {
         viewModelScope.launch {
             if (isSyncing.value) return@launch
@@ -1127,13 +1256,22 @@ class SettingsViewModel @Inject constructor(
             _uiState.update { it.copy(isLoadingModels = true, modelsFetchError = null) }
             try {
                 val provider = AiProvider.fromString(providerName)
-                val aiClient = aiClientFactory.createClient(provider, apiKey)
-                val modelStrings = aiClient.getAvailableModels(apiKey)
-                val models = modelStrings
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .distinct()
-                    .map { com.theveloper.pixelplay.data.ai.GeminiModel(it, formatModelDisplayName(it)) }
+                val models = if (provider == AiProvider.GEMINI) {
+                    geminiModelService.fetchAvailableModels(apiKey).getOrThrow()
+                } else {
+                    val baseUrl = if (provider.hasConfigurableUrl)
+                        aiPreferencesRepository.getBaseUrl(provider).first()
+                    else ""
+                    val aiClient = if (provider.hasConfigurableUrl)
+                        aiClientFactory.createClientWithUrl(provider, apiKey, baseUrl)
+                    else
+                        aiClientFactory.createClient(provider, apiKey)
+                    aiClient.getAvailableModels(apiKey)
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                        .map { com.theveloper.pixelplay.data.ai.GeminiModel(it, formatModelDisplayName(it)) }
+                }
                 
                 _uiState.update { 
                     it.copy(
@@ -1154,7 +1292,7 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isLoadingModels = false,
-                        modelsFetchError = e.message ?: context.getString(R.string.models_fetch_failed),
+                        modelsFetchError = e.message ?: context.getString(R.string.settings_models_fetch_failed),
                     )
                 }
             }
@@ -1167,7 +1305,6 @@ class SettingsViewModel @Inject constructor(
             .replace('-', ' ')
             .replace('_', ' ')
             .split(' ')
-            .filter { it.isNotBlank() }
             .joinToString(" ") { token ->
                 token.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
             }
@@ -1182,7 +1319,7 @@ class SettingsViewModel @Inject constructor(
      * This should only be used for testing in Developer Options.
      */
     fun triggerTestCrash() {
-        throw RuntimeException(context.getString(R.string.dev_test_crash_message))
+        throw RuntimeException(context.getString(R.string.settings_dev_test_crash_message))
     }
 
     fun resetSetupFlow() {
@@ -1247,19 +1384,19 @@ class SettingsViewModel @Inject constructor(
                 operation = BackupOperationType.EXPORT,
                 step = 0,
                 totalSteps = 1,
-                title = context.getString(R.string.backup_progress_preparing_backup),
-                detail = context.getString(R.string.backup_progress_starting_backup_task),
+                title = context.getString(R.string.settings_backup_progress_preparing_backup),
+                detail = context.getString(R.string.settings_backup_progress_starting_backup_task),
             )
             val result = backupManager.export(uri, sections) { progress ->
                 _dataTransferProgress.value = progress
             }
             result.fold(
-                onSuccess = { _dataTransferEvents.emit(context.getString(R.string.data_exported_successfully)) },
+                onSuccess = { _dataTransferEvents.emit(context.getString(R.string.settings_data_exported_successfully)) },
                 onFailure = {
                     _dataTransferEvents.emit(
                         context.getString(
-                            R.string.export_failed_format,
-                            it.localizedMessage ?: context.getString(R.string.error_unknown),
+                            R.string.settings_export_failed_format,
+                            it.localizedMessage ?: context.getString(R.string.common_error_unknown),
                         ),
                     )
                 },
@@ -1282,8 +1419,8 @@ class SettingsViewModel @Inject constructor(
                 onFailure = { error ->
                     _dataTransferEvents.emit(
                         context.getString(
-                            R.string.backup_invalid_format,
-                            error.localizedMessage ?: context.getString(R.string.error_unknown),
+                            R.string.settings_backup_invalid_format,
+                            error.localizedMessage ?: context.getString(R.string.common_error_unknown),
                         ),
                     )
                     _uiState.update { it.copy(isInspectingBackup = false) }
@@ -1309,28 +1446,28 @@ class SettingsViewModel @Inject constructor(
                 operation = BackupOperationType.IMPORT,
                 step = 0,
                 totalSteps = 1,
-                title = context.getString(R.string.backup_progress_preparing_restore),
-                detail = context.getString(R.string.backup_progress_starting_task),
+                title = context.getString(R.string.settings_backup_progress_preparing_restore),
+                detail = context.getString(R.string.settings_backup_progress_starting_task),
             )
             val result = backupManager.restore(uri, plan) { progress ->
                 _dataTransferProgress.value = progress
             }
             when (result) {
                 is RestoreResult.Success -> {
-                    _dataTransferEvents.emit(context.getString(R.string.data_restored_successfully))
+                    _dataTransferEvents.emit(context.getString(R.string.settings_data_restored_successfully))
                     syncManager.sync()
                 }
                 is RestoreResult.PartialFailure -> {
                     val failedNames = result.failed.entries.joinToString { "${it.key.label}: ${it.value}" }
                     _dataTransferEvents.emit(
-                        context.getString(R.string.restore_partial_unresolved_format, failedNames),
+                        context.getString(R.string.settings_restore_partial_unresolved_format, failedNames),
                     )
                     if (result.succeeded.isNotEmpty() || !result.rolledBack) {
                         syncManager.sync()
                     }
                 }
                 is RestoreResult.TotalFailure -> {
-                    _dataTransferEvents.emit(context.getString(R.string.restore_failed_format, result.error))
+                    _dataTransferEvents.emit(context.getString(R.string.settings_restore_failed_format, result.error))
                 }
             }
             delay(300)

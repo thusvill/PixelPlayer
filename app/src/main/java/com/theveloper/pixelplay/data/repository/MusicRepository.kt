@@ -84,6 +84,11 @@ interface MusicRepository {
     fun getSongCountFlow(): Flow<Int>
 
     /**
+     * Returns the count of cloud songs in the library.
+     */
+    fun getCloudSongCountFlow(): Flow<Int>
+
+    /**
      * Returns a random selection of songs for efficient shuffle.
      * Uses database-level RANDOM() for performance.
      * @param limit Maximum number of songs to return.
@@ -230,7 +235,7 @@ interface MusicRepository {
 
     suspend fun invalidateCachesDependentOnAllowedDirectories() // Nuevo para precarga de temas
 
-    fun searchSongs(query: String): Flow<List<Song>>
+    fun searchSongs(query: String, titleOnly: Boolean = false): Flow<List<Song>>
     fun searchAlbums(query: String, minTracks: Int = 1): Flow<List<Album>>
     fun searchArtists(query: String): Flow<List<Artist>>
     suspend fun searchPlaylists(query: String): List<Playlist> // Mantener suspend, ya que no hay Flow aún
@@ -280,6 +285,7 @@ interface MusicRepository {
      */
     fun getSong(songId: String): Flow<Song?>
     fun getArtistById(artistId: Long): Flow<Artist?>
+    suspend fun getArtistIdByName(name: String): Long?
     fun getArtistsForSong(songId: Long): Flow<List<Artist>>
 
     /**
@@ -350,4 +356,20 @@ interface MusicRepository {
         sortOption: com.theveloper.pixelplay.data.model.SortOption,
         storageFilter: com.theveloper.pixelplay.data.model.StorageFilter
     ): List<Long>
+
+    /**
+     * Resolves the unified-table song id for a content URI. Returns null if no
+     * matching row exists. Used by locate-current-song to recover from playback
+     * sessions where `Song.id` is a non-numeric source-specific string.
+     */
+    suspend fun getSongIdByContentUri(contentUri: String): Long?
+
+    /**
+     * Enqueues an incremental SyncWorker run with [androidx.work.ExistingWorkPolicy.KEEP].
+     * Use from finally blocks of Telegram ingestion flows to guarantee the unified-table
+     * sync happens even when an exception bypasses the normal end-of-flow
+     * [saveTelegramChannel] call. KEEP avoids cancelling a full/rebuild that may be
+     * in progress under the same unique work name.
+     */
+    fun requestTelegramUnifiedSync()
 }

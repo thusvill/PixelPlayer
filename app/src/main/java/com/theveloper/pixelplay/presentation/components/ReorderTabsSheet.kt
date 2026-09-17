@@ -63,6 +63,7 @@ import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -92,14 +93,14 @@ fun ReorderTabsSheet(
                         showResetDialog = false
                     }
                 ) {
-                    Text(stringResource(R.string.action_reset))
+                    Text(stringResource(R.string.common_reset), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = { showResetDialog = false }
                 ) {
-                    Text(stringResource(R.string.cancel))
+                    Text(stringResource(R.string.common_cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         )
@@ -210,11 +211,16 @@ fun ReorderTabsSheet(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.DragIndicator,
-                                            contentDescription = stringResource(R.string.cd_drag_handle),
+                                            contentDescription = stringResource(R.string.reorder_tabs_cd_drag_handle),
                                             modifier = Modifier.draggableHandle()
                                         )
                                         Spacer(modifier = Modifier.width(16.dp))
-                                        Text(text = tab, style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            text = LibraryTabId.fromStableKey(tab)
+                                                ?.let { stringResource(it.labelRes) }
+                                                ?: tab,
+                                            style = MaterialTheme.typography.bodyLarge
+                                        )
                                     }
                                 }
                             }
@@ -264,7 +270,7 @@ fun FloatingToolBar(
             ) {
                 Icon(
                     painter = painterResource(R.drawable.outline_restart_alt_24),
-                    contentDescription = stringResource(R.string.cd_reset),
+                    contentDescription = stringResource(R.string.common_reset),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -274,8 +280,8 @@ fun FloatingToolBar(
                     .align(Alignment.CenterVertically),
                 shape = CircleShape,
                 onClick = onClick,
-                icon = { Icon(Icons.Rounded.Check, contentDescription = stringResource(R.string.action_done)) },
-                text = { Text(stringResource(R.string.action_done)) }
+                icon = { Icon(Icons.Rounded.Check, contentDescription = stringResource(R.string.common_done)) },
+                text = { Text(stringResource(R.string.common_done)) }
             )
         }
     }

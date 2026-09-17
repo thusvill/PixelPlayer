@@ -1,3 +1,5 @@
+package com.theveloper.pixelplay.presentation.screens
+
 import android.widget.Toast
 import androidx.compose.ui.res.stringResource
 import com.theveloper.pixelplay.R
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -31,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -64,13 +69,13 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.theveloper.pixelplay.data.preferences.UserPreferencesRepository
 import com.theveloper.pixelplay.presentation.components.CollapsibleCommonTopBar
 import com.theveloper.pixelplay.presentation.viewmodel.ArtistSettingsViewModel
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import androidx.compose.ui.text.style.TextOverflow
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -170,7 +175,7 @@ fun WordDelimiterConfigScreen(
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            text = stringResource(R.string.word_delimiter_section_title),
+                            text = stringResource(R.string.word_delimiter_current_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -179,7 +184,7 @@ fun WordDelimiterConfigScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
-                            text = stringResource(R.string.word_delimiter_section_subtitle),
+                            text = stringResource(R.string.word_delimiter_current_subtitle),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -211,7 +216,7 @@ fun WordDelimiterConfigScreen(
                                         trailingIcon = {
                                             Icon(
                                                 imageVector = Icons.Rounded.Close,
-                                                contentDescription = stringResource(R.string.cd_remove),
+                                                contentDescription = stringResource(R.string.common_remove),
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         },
@@ -257,7 +262,7 @@ fun WordDelimiterConfigScreen(
                                 onValueChange = { newDelimiter = it },
                                 placeholder = {
                                     Text(
-                                        text = stringResource(R.string.word_delimiter_hint),
+                                        text = stringResource(R.string.word_delimiter_add_hint),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                     )
                                 },
@@ -308,7 +313,7 @@ fun WordDelimiterConfigScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Add,
-                                    contentDescription = stringResource(R.string.cd_add_word_delimiter)
+                                    contentDescription = stringResource(R.string.word__delimiter_cd_add)
                                 )
                             }
                         }
@@ -366,11 +371,11 @@ fun WordDelimiterConfigScreen(
                         modifier = Modifier
                             .width(52.dp)
                             .height(36.dp),
-                        shape = androidx.compose.foundation.shape.CircleShape
+                        shape = CircleShape
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.RestartAlt,
-                            contentDescription = stringResource(R.string.cd_reset_defaults),
+                            contentDescription = stringResource(R.string.common_reset_defaults),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -379,7 +384,7 @@ fun WordDelimiterConfigScreen(
         )
 
         if (showResetDialog) {
-            androidx.compose.material3.AlertDialog(
+            AlertDialog(
                 onDismissRequest = { showResetDialog = false },
                 title = {
                     Text(
@@ -414,14 +419,14 @@ fun WordDelimiterConfigScreen(
                             contentColor = MaterialTheme.colorScheme.onError
                         )
                     ) {
-                        Text(stringResource(R.string.action_reset))
+                        Text(stringResource(R.string.common_reset))
                     }
                 },
                 dismissButton = {
-                    androidx.compose.material3.TextButton(
+                    TextButton(
                         onClick = { showResetDialog = false }
                     ) {
-                        Text(stringResource(R.string.cancel))
+                        Text(stringResource(R.string.common_cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,

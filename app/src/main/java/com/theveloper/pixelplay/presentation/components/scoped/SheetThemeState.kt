@@ -77,8 +77,8 @@ internal fun rememberSheetThemeState(
     ) {
         if (
             activePlayerScheme != null &&
-            !currentSong?.albumArtUriString.isNullOrBlank() &&
-            currentSong?.albumArtUriString == themedAlbumArtUri
+            hasAlbumArt &&
+            currentSong.albumArtUriString == themedAlbumArtUri
         ) {
             activePlayerScheme
         } else {
@@ -206,7 +206,9 @@ private fun rememberBatchAnimatedColorScheme(target: ColorScheme): ColorScheme {
         progress.snapTo(0f)
         progress.animateTo(
             targetValue = 1f,
-            animationSpec = spring(stiffness = Spring.StiffnessLow)
+            // Snappier than the old StiffnessLow so the palette resolves in step with the
+            // (now faster) carousel skip animation instead of trailing behind it.
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
         )
     }
 

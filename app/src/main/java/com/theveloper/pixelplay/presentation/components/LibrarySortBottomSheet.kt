@@ -52,6 +52,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import com.theveloper.pixelplay.R
 import com.theveloper.pixelplay.data.model.SortDirection
 import com.theveloper.pixelplay.data.model.SortOption
@@ -103,7 +104,7 @@ fun LibrarySortBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 16.dp)
+                .padding(horizontal = 24.dp, vertical = 0.dp)
                 .selectableGroup(),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
@@ -112,7 +113,7 @@ fun LibrarySortBottomSheet(
                 style = MaterialTheme.typography.headlineMedium,
                 fontFamily = GoogleSansRounded,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 2.dp, top = 8.dp, bottom = 16.dp)
+                modifier = Modifier.padding(start = 2.dp, top = 0.dp, bottom = 16.dp)
             )
 
             // Cast to nullable list to handle potential runtime nulls, then filter
@@ -137,16 +138,16 @@ fun LibrarySortBottomSheet(
 
             if (shouldShowDirectionToggle && resolvedSelectedOption != null) {
                 val directionLabel = when (selectedDirection) {
-                    SortDirection.Descending -> stringResource(R.string.presentation_batch_g_sort_descending)
-                    SortDirection.Ascending -> stringResource(R.string.presentation_batch_g_sort_ascending)
-                    null -> stringResource(R.string.presentation_batch_g_sort_original_order)
+                    SortDirection.Descending -> stringResource(R.string.library_sort_descending)
+                    SortDirection.Ascending -> stringResource(R.string.library_sort_ascending)
+                    null -> stringResource(R.string.library_sort_original_order)
                 }
                 val directionHint = when {
                     resolvedSelectedOption.canFlipDirection && selectedDirection == SortDirection.Descending ->
-                        stringResource(R.string.presentation_batch_g_sort_tap_ascending)
+                        stringResource(R.string.library_sort_tap_ascending)
                     resolvedSelectedOption.canFlipDirection && selectedDirection == SortDirection.Ascending ->
-                        stringResource(R.string.presentation_batch_g_sort_tap_descending)
-                    else -> stringResource(R.string.presentation_batch_g_sort_keeps_order)
+                        stringResource(R.string.library_sort_tap_descending)
+                    else -> stringResource(R.string.library_sort_keeps_order)
                 }
                 val isDescending = selectedDirection == SortDirection.Descending
 
@@ -211,7 +212,7 @@ fun LibrarySortBottomSheet(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = option.methodLabel,
+                                text = stringResource(option.methodLabelRes),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
                             )
@@ -250,7 +251,7 @@ fun LibrarySortBottomSheet(
             if (sourceToggleContent != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = stringResource(R.string.presentation_batch_g_sort_source),
+                    text = stringResource(R.string.library_sort_source),
                     style = MaterialTheme.typography.headlineSmall,
                     fontFamily = GoogleSansRounded,
                     fontWeight = FontWeight.Bold,
@@ -374,7 +375,7 @@ private fun LibrarySheetSortDirectionCard(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.presentation_batch_g_sort_order),
+                    text = stringResource(R.string.library_sort_order),
                     style = MaterialTheme.typography.labelLarge,
                     color = contentColor.copy(alpha = 0.82f)
                 )
@@ -399,7 +400,7 @@ internal fun LibrarySheetToggleCard(
     label: String,
     checked: Boolean,
     boxBackgroundColor: Color,
-    boxCornerRadius: androidx.compose.ui.unit.Dp,
+    boxCornerRadius: Dp,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Box(
@@ -439,8 +440,9 @@ internal fun LibrarySheetToggleCard(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.tertiary,
-                    checkedTrackColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    checkedThumbColor = MaterialTheme.colorScheme.onTertiary,
+                    checkedTrackColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    checkedIconColor = MaterialTheme.colorScheme.onTertiaryContainer,
                     uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
                 ),
@@ -448,8 +450,8 @@ internal fun LibrarySheetToggleCard(
                     {
                         Icon(
                             imageVector = Icons.Rounded.Check,
-                            contentDescription = stringResource(R.string.presentation_batch_g_cd_switch_on),
-                            tint = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentDescription = stringResource(R.string.library_sort_cd_switch_on),
+                            //tint = MaterialTheme.colorScheme.onTertiaryContainer,
                             modifier = Modifier.size(SwitchDefaults.IconSize),
                         )
                     }

@@ -64,9 +64,10 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import com.theveloper.pixelplay.R
@@ -78,6 +79,7 @@ import com.theveloper.pixelplay.presentation.components.RecentlyPlayedRangeSelec
 import com.theveloper.pixelplay.presentation.components.SongInfoBottomSheet
 import com.theveloper.pixelplay.presentation.components.SmartImage
 import com.theveloper.pixelplay.presentation.components.subcomps.EnhancedSongListItem
+import com.theveloper.pixelplay.presentation.components.subcomps.TightWrapText
 import com.theveloper.pixelplay.presentation.navigation.Screen
 import com.theveloper.pixelplay.presentation.model.RecentlyPlayedSongUiModel
 import com.theveloper.pixelplay.presentation.model.collectRecentlyPlayedSongIds
@@ -91,6 +93,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import android.text.format.DateFormat as AndroidDateFormat
 import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
 import androidx.compose.ui.res.stringResource
 
@@ -105,8 +108,8 @@ fun RecentlyPlayedScreen(
     Trace.beginSection("RecentlyPlayedScreen.Composition")
 
     val context = LocalContext.current
-    val queueRecentlyPlayed = stringResource(R.string.presentation_batch_b_queue_recently_played)
-    val shuffleLabel = stringResource(R.string.shortcut_shuffle_short)
+    val queueRecentlyPlayed = stringResource(R.string.recently_played_queue_name)
+    val shuffleLabel = stringResource(R.string.common_shuffle)
     val playbackHistory by playerViewModel.playbackHistory.collectAsStateWithLifecycle()
     val currentSongId by remember(playerViewModel.stablePlayerState) {
         playerViewModel.stablePlayerState.map { it.currentSong?.id }.distinctUntilChanged()
@@ -195,7 +198,7 @@ fun RecentlyPlayedScreen(
             ) {
                 item(key = "recently_played_header") {
                     ExpressiveRecentlyPlayedHeader(
-                        title = stringResource(R.string.presentation_batch_b_recently_played_title),
+                        title = stringResource(R.string.recently_played_title),
                         songs = recentlyPlayedSongs,
                         selectedRange = selectedRange,
                         scrollState = lazyListState
@@ -286,15 +289,12 @@ fun RecentlyPlayedScreen(
                     if (queueSongs.isNotEmpty()) {
                         playerViewModel.playSongs(queueSongs, song, queueRecentlyPlayed)
                     }
-                    showSongInfoBottomSheet = false
                 },
                 onAddToQueue = {
                     playerViewModel.addSongToQueue(song)
-                    showSongInfoBottomSheet = false
                 },
                 onAddNextToQueue = {
                     playerViewModel.addSongNextToQueue(song)
-                    showSongInfoBottomSheet = false
                 },
                 onAddToPlayList = {
                     showPlaylistBottomSheet = true
@@ -308,18 +308,24 @@ fun RecentlyPlayedScreen(
                     navController.navigateSafely(Screen.ArtistDetail.createRoute(song.artistId))
                     showSongInfoBottomSheet = false
                 },
+                onNavigateToArtistById = { artistId ->
+                    navController.navigateSafely(Screen.ArtistDetail.createRoute(artistId))
+                    showSongInfoBottomSheet = false
+                },
                 onNavigateToGenre = {
                     song.genre?.let {
                         navController.navigateSafely(Screen.GenreDetail.createRoute(java.net.URLEncoder.encode(it, "UTF-8")))
                     }
                     showSongInfoBottomSheet = false
                 },
-                onEditSong = { newTitle, newArtist, newAlbum, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+                onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
                     playerViewModel.editSongMetadata(
                         song,
                         newTitle,
                         newArtist,
                         newAlbum,
+                        newAlbumArtist,
+                        newComposer,
                         newGenre,
                         newLyrics,
                         newTrackNumber,
@@ -328,9 +334,6 @@ fun RecentlyPlayedScreen(
                         replayGainAlbumGainDb,
                         coverArtUpdate
                     )
-                },
-                generateAiMetadata = { fields ->
-                    playerViewModel.generateAiMetadata(song, fields)
                 },
                 removeFromListTrigger = {}
             )
@@ -359,7 +362,7 @@ fun RecentlyPlayedScreen(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = stringResource(R.string.auth_cd_back)
+                contentDescription = stringResource(R.string.common_back)
             )
         }
     }
@@ -497,7 +500,8 @@ private fun RecentlyPlayedActions(
                 topEnd = 14.dp,
                 bottomStart = 52.dp,
                 bottomEnd = 14.dp
-            )
+            ),
+            contentPadding = PaddingValues(horizontal = 10.dp),
         ) {
             Icon(
                 imageVector = Icons.Rounded.PlayArrow,
@@ -505,7 +509,13 @@ private fun RecentlyPlayedActions(
                 modifier = Modifier.size(ButtonDefaults.IconSize)
             )
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-            Text(stringResource(R.string.presentation_batch_b_play_latest))
+            TightWrapText(
+                text = stringResource(R.string.recently_played_action_play_latest),
+                modifier = Modifier.padding(end = 4.dp),
+                overflow = TextOverflow.Ellipsis,
+                maxLines = 2,
+                lineHeight = 20.sp
+            )
         }
 
         FilledTonalButton(
@@ -518,7 +528,8 @@ private fun RecentlyPlayedActions(
                 topEnd = 52.dp,
                 bottomStart = 14.dp,
                 bottomEnd = 52.dp
-            )
+            ),
+            contentPadding = PaddingValues(horizontal = 10.dp),
         ) {
             Icon(
                 imageVector = Icons.Rounded.Shuffle,
@@ -526,7 +537,13 @@ private fun RecentlyPlayedActions(
                 modifier = Modifier.size(ButtonDefaults.IconSize)
             )
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-            Text(shuffleLabel)
+            TightWrapText(
+                text = shuffleLabel,
+                modifier = Modifier.padding(end = 4.dp),
+                overflow = TextOverflow.Ellipsis,
+                maxLines = 2,
+                lineHeight = 20.sp
+            )
         }
     }
 }
@@ -643,14 +660,14 @@ private fun RecentlyPlayedEmptyState(
         ) {
             Text(
                 text = stringResource(
-                    R.string.presentation_batch_b_recent_empty_title,
+                    R.string.recently_played_empty_title,
                     range.displayName.lowercase()
                 ),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = stringResource(R.string.presentation_batch_b_recent_empty_subtitle),
+                text = stringResource(R.string.recently_played_empty_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -694,8 +711,8 @@ private fun groupRecentlyPlayedSongs(
             bucket += item
         } else {
             groups += TimestampGroup(
-                key = currentBucketKey ?: "",
-                label = currentLabel ?: "",
+                key = currentBucketKey,
+                label = currentLabel!!,
                 isHourBucket = currentIsHourBucket,
                 songs = bucket
             )
@@ -708,8 +725,8 @@ private fun groupRecentlyPlayedSongs(
 
     if (bucket.isNotEmpty() && currentLabel != null && currentBucketKey != null) {
         groups += TimestampGroup(
-            key = currentBucketKey ?: "",
-            label = currentLabel ?: "",
+            key = currentBucketKey,
+            label = currentLabel,
             isHourBucket = currentIsHourBucket,
             songs = bucket
         )
@@ -743,7 +760,12 @@ private fun resolveTimestampBucket(
             .withNano(0)
         return TimestampBucket(
             key = hourStart.toInstant().toEpochMilli().toString(),
-            label = hourStart.format(DateTimeFormatter.ofPattern("h a", Locale.getDefault())),
+            label = hourStart.format(
+                DateTimeFormatter.ofPattern(
+                    if (AndroidDateFormat.is24HourFormat(context)) "HH:mm" else "h a",
+                    Locale.getDefault()
+                )
+            ),
             isHourBucket = true
         )
     }
@@ -752,14 +774,14 @@ private fun resolveTimestampBucket(
         date == nowDate -> {
             TimestampBucket(
                 key = date.toString(),
-                label = context.getString(R.string.presentation_batch_b_date_today),
+                label = context.getString(R.string.recently_played_date_today),
                 isHourBucket = false
             )
         }
         date == nowDate.minusDays(1) -> {
             TimestampBucket(
                 key = date.toString(),
-                label = context.getString(R.string.presentation_batch_b_date_yesterday),
+                label = context.getString(R.string.recently_played_date_yesterday),
                 isHourBucket = false
             )
         }

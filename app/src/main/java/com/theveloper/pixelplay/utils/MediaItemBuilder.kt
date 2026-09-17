@@ -3,10 +3,14 @@ package com.theveloper.pixelplay.utils
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import androidx.annotation.OptIn
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MediaMetadata.PICTURE_TYPE_FRONT_COVER
+import androidx.media3.common.util.UnstableApi
 import com.theveloper.pixelplay.data.provider.SharedArtworkContentProvider
 import com.theveloper.pixelplay.data.model.Song
 import java.io.File
@@ -24,6 +28,15 @@ object MediaItemBuilder {
         "audio/3gp",
         "audio/3gpp",
         "audio/3gpp2",
+        "audio/amr",
+        "audio/amr-wb",
+        "audio/evrc",
+        "audio/qcelp",
+        "audio/x-ima-adpcm",
+        "audio/x-ms-wma",
+        "audio/x-aiff",
+        "audio/ac3",
+        "audio/vnd.dts",
     )
     private val DIRECT_FILE_URI_EXTENSIONS = setOf(
         "m4a",
@@ -35,6 +48,16 @@ object MediaItemBuilder {
         "3gp",
         "3gpp",
         "alac",
+        "amr",
+        "awb",
+        "evrc",
+        "qcp",
+        "ima",
+        "wma",
+        "aif",
+        "aiff",
+        "ac3",
+        "dts",
     )
     private val EXTRACTOR_FIRST_MIME_TYPES = setOf(
         "audio/mp4",
@@ -43,6 +66,7 @@ object MediaItemBuilder {
         "audio/mp4a-latm",
         "audio/alac",
         "audio/x-alac",
+        "audio/x-aiff",
     )
     private val SUPPORTED_INTERNAL_ARTWORK_SCHEMES = setOf(
         LocalArtworkUri.SCHEME,
@@ -72,6 +96,7 @@ object MediaItemBuilder {
     const val EXTERNAL_EXTRA_BITRATE = EXTERNAL_EXTRA_PREFIX + "BITRATE"
     const val EXTERNAL_EXTRA_SAMPLE_RATE = EXTERNAL_EXTRA_PREFIX + "SAMPLE_RATE"
     const val EXTERNAL_EXTRA_FILE_PATH = EXTERNAL_EXTRA_PREFIX + "FILE_PATH"
+    const val EXTERNAL_EXTRA_NAVIDROME_ID = EXTERNAL_EXTRA_PREFIX + "NAVIDROME_ID"
 
     fun build(song: Song): MediaItem {
         return MediaItem.Builder()
@@ -83,17 +108,23 @@ object MediaItemBuilder {
     }
 
     fun buildForExternalController(context: Context, song: Song): MediaItem {
-        return MediaItem.Builder()
-            .setMediaId(song.id)
-            .setUri(playbackUri(song))
-            .setMimeType(playbackMimeType(song))
-            .setMediaMetadata(
-                buildMediaMetadataForSong(
-                    song = song,
-                    exposedArtworkUri = externalControllerArtworkUri(context, song.albumArtUriString)
+        // This is the MediaSession item path for Android Auto / other external controllers;
+        // time it so the performance report can attribute browse/queue lag here.
+        return com.theveloper.pixelplay.data.diagnostics.PerformanceMetrics.time(
+            com.theveloper.pixelplay.data.diagnostics.PerformanceMetrics.Timings.MEDIASESSION_ITEM_BUILD
+        ) {
+            MediaItem.Builder()
+                .setMediaId(song.id)
+                .setUri(playbackUri(song))
+                .setMimeType(playbackMimeType(song))
+                .setMediaMetadata(
+                    buildMediaMetadataForSong(
+                        song = song,
+                        exposedArtworkUri = externalControllerArtworkUri(context, song.albumArtUriString)
+                    )
                 )
-            )
-            .build()
+                .build()
+        }
     }
 
     fun playbackUri(song: Song): Uri = playbackUri(
@@ -238,6 +269,7 @@ object MediaItemBuilder {
         }
     }
 
+    @OptIn(UnstableApi::class)
     private fun buildMediaMetadataForSong(
         song: Song,
         exposedArtworkUri: Uri? = artworkUri(song.albumArtUriString)
@@ -267,6 +299,7 @@ object MediaItemBuilder {
             putInt(EXTERNAL_EXTRA_BITRATE, song.bitrate ?: 0)
             putInt(EXTERNAL_EXTRA_SAMPLE_RATE, song.sampleRate ?: 0)
             putString(EXTERNAL_EXTRA_FILE_PATH, song.path)
+            song.navidromeId?.let { putString(EXTERNAL_EXTRA_NAVIDROME_ID, it) }
         }
 
         metadataBuilder.setExtras(extras)

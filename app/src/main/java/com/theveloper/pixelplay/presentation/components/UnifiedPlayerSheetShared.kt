@@ -33,6 +33,7 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,7 +48,7 @@ import coil.size.Size
 import com.theveloper.pixelplay.data.model.Song
 import com.theveloper.pixelplay.ui.theme.GoogleSansRounded
 
-internal val LocalMaterialTheme = staticCompositionLocalOf<ColorScheme> { error("No ColorScheme provided") }
+internal val LocalMaterialTheme = compositionLocalOf<ColorScheme> { error("No ColorScheme provided") }
 
 val MiniPlayerHeight = 64.dp
 const val ANIMATION_DURATION_MS = 255
@@ -56,7 +57,7 @@ val MiniPlayerBottomSpacer = 8.dp
 @Composable
 fun getNavigationBarHeight(): Dp {
     val insets = WindowInsets.safeDrawing.asPaddingValues()
-    return insets.calculateBottomPadding()
+    return sanitizeNavigationBarBottomInset(insets.calculateBottomPadding())
 }
 
 @Composable
@@ -67,9 +68,9 @@ internal fun MiniPlayerContentInternal(
     isPreparingPlayback: Boolean,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
-    cornerRadiusAlb: Dp,
     onNext: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    canScroll: Boolean = true
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val controlsEnabled = !isCastConnecting && !isPreparingPlayback
@@ -136,12 +137,14 @@ internal fun MiniPlayerContentInternal(
                     else -> song.title
                 },
                 style = titleStyle,
-                gradientEdgeColor = LocalMaterialTheme.current.primaryContainer
+                gradientEdgeColor = LocalMaterialTheme.current.primaryContainer,
+                canScroll = canScroll
             )
             AutoScrollingText(
                 text = if (isPreparingPlayback) "Loading audio…" else song.displayArtist,
                 style = artistStyle,
-                gradientEdgeColor = LocalMaterialTheme.current.primaryContainer
+                gradientEdgeColor = LocalMaterialTheme.current.primaryContainer,
+                canScroll = canScroll
             )
         }
         Spacer(modifier = Modifier.width(8.dp))

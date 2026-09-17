@@ -1,3 +1,4 @@
+@file:Suppress("DEPRECATION")
 package com.theveloper.pixelplay.data.jellyfin
 
 import android.content.Context
@@ -37,6 +38,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.absoluteValue
 
+@Suppress("DEPRECATION")
 @Singleton
 class JellyfinRepository @Inject constructor(
     private val api: JellyfinApiService,
@@ -547,7 +549,7 @@ class JellyfinRepository @Inject constructor(
                     dateAdded = jellyfinSong.dateAdded.takeIf { it > 0 }
                         ?: System.currentTimeMillis(),
                     mimeType = jellyfinSong.mimeType,
-                    bitrate = jellyfinSong.bitRate,
+                    bitrate = jellyfinSong.bitRate?.let { it * 1000 },
                     sampleRate = null,
                     telegramChatId = null,
                     telegramFileId = null,
@@ -649,7 +651,7 @@ class JellyfinRepository @Inject constructor(
             duration = duration,
             genre = genre,
             mimeType = resolvedMimeType,
-            bitrate = bitRate,
+            bitrate = bitRate?.let { it * 1000 },
             sampleRate = null,
             year = year,
             trackNumber = trackNumber,

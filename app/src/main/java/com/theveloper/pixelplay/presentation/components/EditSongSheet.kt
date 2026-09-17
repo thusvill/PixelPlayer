@@ -88,6 +88,7 @@ import dev.shreyaspatil.capturable.controller.rememberCaptureController
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 
 private fun formatReplayGainForInput(gainDb: Float?): String {
     return gainDb?.let { String.format(Locale.US, "%.2f", it) }.orEmpty()
@@ -103,6 +104,8 @@ fun EditSongSheet(
         title: String,
         artist: String,
         album: String,
+        albumArtist: String,
+        composer: String,
         genre: String,
         lyrics: String,
         trackNumber: Int,
@@ -147,6 +150,8 @@ private fun EditSongContent(
         title: String,
         artist: String,
         album: String,
+        albumArtist: String,
+        composer: String,
         genre: String,
         lyrics: String,
         trackNumber: Int,
@@ -159,6 +164,8 @@ private fun EditSongContent(
     var title by remember { mutableStateOf(song.title) }
     var artist by remember { mutableStateOf(song.displayArtist) }
     var album by remember { mutableStateOf(song.album) }
+    var albumArtist by remember { mutableStateOf(song.albumArtist ?: "") }
+    var composer by remember { mutableStateOf("") }
     var genre by remember { mutableStateOf(song.genre ?: "") }
     var lyrics by remember { mutableStateOf(song.lyrics ?: "") }
     var trackNumber by remember { mutableStateOf(song.trackNumber.toString()) }
@@ -184,6 +191,8 @@ private fun EditSongContent(
         title = song.title
         artist = song.displayArtist
         album = song.album
+        albumArtist = song.albumArtist ?: ""
+        composer = ""
         genre = song.genre ?: ""
         lyrics = song.lyrics ?: ""
         trackNumber = song.trackNumber.toString()
@@ -215,6 +224,7 @@ private fun EditSongContent(
                 }
             }
 
+            embeddedMetadata?.composer?.takeIf { it.isNotBlank() }?.let { composer = it }
             replayGainTrackGainDb = formatReplayGainForInput(embeddedMetadata?.replayGainTrackGainDb)
             replayGainAlbumGainDb = formatReplayGainForInput(embeddedMetadata?.replayGainAlbumGainDb)
         }
@@ -267,12 +277,12 @@ private fun EditSongContent(
     if (showInfoDialog) {
         AlertDialog(
             onDismissRequest = { showInfoDialog = false },
-            icon = { Icon(Icons.Rounded.Info, contentDescription = stringResource(R.string.cd_info_icon)) },
-            title = { Text(stringResource(R.string.edit_song_info_dialog_title)) },
-            text = { Text(stringResource(R.string.edit_song_info_dialog_body)) },
+            icon = { Icon(Icons.Rounded.Info, contentDescription = stringResource(R.string.edit_song_cd_info_icon)) },
+            title = { Text(stringResource(R.string.edit_song_dialog_title)) },
+            text = { Text(stringResource(R.string.edit_song_dialog_body)) },
             confirmButton = {
                 TextButton(onClick = { showInfoDialog = false }) {
-                    Text(stringResource(R.string.edit_song_got_it))
+                    Text(stringResource(R.string.edit_song_dialog_got_it), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         )
@@ -299,7 +309,7 @@ private fun EditSongContent(
                         onClick = { showInfoDialog = true },
                         shape = CircleShape
                     ) {
-                        Icon(Icons.Rounded.Info, contentDescription = stringResource(R.string.cd_show_metadata_info))
+                        Icon(Icons.Rounded.Info, contentDescription = stringResource(R.string.edit_song_cd_show_metadata_info))
                     }
                 }
             )
@@ -349,12 +359,10 @@ private fun EditSongContent(
 
             // --- Campo de Título ---
             item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         modifier = Modifier.padding(start = 4.dp),
-                        text = stringResource(R.string.song_field_title),
+                        text = stringResource(R.string.edit_song_field_title),
                         color = MaterialTheme.colorScheme.tertiary,
                         style = MaterialTheme.typography.labelLarge
                     )
@@ -363,130 +371,20 @@ private fun EditSongContent(
                         shape = textFieldShape,
                         colors = textFieldColors,
                         onValueChange = { title = it },
-                        placeholder = { Text(stringResource(R.string.song_field_title)) },
-                        leadingIcon = { Icon(Icons.Rounded.MusicNote, tint = MaterialTheme.colorScheme.tertiary,contentDescription = stringResource(R.string.cd_song_title_icon)) },
+                        placeholder = { Text(stringResource(R.string.edit_song_field_title)) },
+                        leadingIcon = { Icon(Icons.Rounded.MusicNote, tint = MaterialTheme.colorScheme.tertiary, contentDescription = stringResource(R.string.edit_song_field_title)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
                 }
             }
 
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        modifier = Modifier.padding(start = 4.dp),
-                        text = stringResource(R.string.song_field_track_number),
-                        color = MaterialTheme.colorScheme.secondary,
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    OutlinedTextField(
-                        value = trackNumber,
-                        shape = textFieldShape,
-                        colors = textFieldColors,
-                        onValueChange = { trackNumber = it },
-                        placeholder = { Text(stringResource(R.string.song_field_track_number)) },
-                        leadingIcon = { Icon(Icons.Rounded.FormatListNumbered, tint = MaterialTheme.colorScheme.secondary, contentDescription = stringResource(R.string.cd_track_number_icon)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                }
-            }
-
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        modifier = Modifier.padding(start = 4.dp),
-                        text = stringResource(R.string.song_field_disc_number),
-                        color = MaterialTheme.colorScheme.secondary,
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    OutlinedTextField(
-                        value = discNumber,
-                        shape = textFieldShape,
-                        colors = textFieldColors,
-                        onValueChange = { discNumber = it },
-                        placeholder = { Text(stringResource(R.string.song_field_disc_number)) },
-                        leadingIcon = { Icon(Icons.Rounded.FormatListNumbered, tint = MaterialTheme.colorScheme.secondary, contentDescription = stringResource(R.string.cd_disc_number_icon)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                }
-            }
-
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        modifier = Modifier.padding(start = 4.dp),
-                        text = stringResource(R.string.song_field_replaygain_track_db),
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    OutlinedTextField(
-                        value = replayGainTrackGainDb,
-                        shape = textFieldShape,
-                        colors = textFieldColors,
-                        onValueChange = { replayGainTrackGainDb = it },
-                        placeholder = { Text(stringResource(R.string.placeholder_replaygain_track_example)) },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Rounded.RepeatOne,
-                                tint = MaterialTheme.colorScheme.primary,
-                                contentDescription = stringResource(R.string.cd_replaygain_track)
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                    )
-                }
-            }
-
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        modifier = Modifier.padding(start = 4.dp),
-                        text = stringResource(R.string.song_field_replaygain_album_db),
-                        color = MaterialTheme.colorScheme.tertiary,
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    OutlinedTextField(
-                        value = replayGainAlbumGainDb,
-                        shape = textFieldShape,
-                        colors = textFieldColors,
-                        onValueChange = { replayGainAlbumGainDb = it },
-                        placeholder = { Text(stringResource(R.string.placeholder_replaygain_album_example)) },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Rounded.Repeat,
-                                tint = MaterialTheme.colorScheme.tertiary,
-                                contentDescription = stringResource(R.string.cd_replaygain_album)
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                    )
-                }
-            }
-
             // --- Campo de Artista ---
             item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         modifier = Modifier.padding(start = 4.dp),
-                        text = stringResource(R.string.song_field_artist),
+                        text = stringResource(R.string.edit_song_field_artist),
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelLarge
                     )
@@ -495,8 +393,8 @@ private fun EditSongContent(
                         colors = textFieldColors,
                         shape = textFieldShape,
                         onValueChange = { artist = it },
-                        placeholder = { Text(stringResource(R.string.song_field_artist)) },
-                        leadingIcon = { Icon(Icons.Rounded.Person, tint = MaterialTheme.colorScheme.primary, contentDescription = stringResource(R.string.song_field_artist)) },
+                        placeholder = { Text(stringResource(R.string.edit_song_field_artist)) },
+                        leadingIcon = { Icon(Icons.Rounded.Person, tint = MaterialTheme.colorScheme.primary, contentDescription = stringResource(R.string.edit_song_field_artist)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -505,12 +403,10 @@ private fun EditSongContent(
 
             // --- Campo de Álbum ---
             item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         modifier = Modifier.padding(start = 4.dp),
-                        text = stringResource(R.string.song_field_album),
+                        text = stringResource(R.string.edit_song_field_album),
                         color = MaterialTheme.colorScheme.tertiary,
                         style = MaterialTheme.typography.labelLarge
                     )
@@ -519,8 +415,30 @@ private fun EditSongContent(
                         colors = textFieldColors,
                         shape = textFieldShape,
                         onValueChange = { album = it },
-                        placeholder = { Text(stringResource(R.string.song_field_album)) },
-                        leadingIcon = { Icon(Icons.Rounded.Album, tint = MaterialTheme.colorScheme.tertiary, contentDescription = stringResource(R.string.song_field_album)) },
+                        placeholder = { Text(stringResource(R.string.edit_song_field_album)) },
+                        leadingIcon = { Icon(Icons.Rounded.Album, tint = MaterialTheme.colorScheme.tertiary, contentDescription = stringResource(R.string.edit_song_field_album)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            }
+
+            // --- Campo de Album Artist ---
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        modifier = Modifier.padding(start = 4.dp),
+                        text = stringResource(R.string.edit_song_field_album_artist),
+                        color = MaterialTheme.colorScheme.secondary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    OutlinedTextField(
+                        value = albumArtist,
+                        colors = textFieldColors,
+                        shape = textFieldShape,
+                        onValueChange = { albumArtist = it },
+                        placeholder = { Text(stringResource(R.string.edit_song_field_album_artist)) },
+                        leadingIcon = { Icon(Icons.Rounded.Person, tint = MaterialTheme.colorScheme.secondary, contentDescription = stringResource(R.string.edit_song_field_album_artist)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -529,12 +447,10 @@ private fun EditSongContent(
 
             // --- Campo de Género ---
             item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         modifier = Modifier.padding(start = 4.dp),
-                        text = stringResource(R.string.song_field_genre),
+                        text = stringResource(R.string.edit_song_field_genre),
                         color = MaterialTheme.colorScheme.secondary,
                         style = MaterialTheme.typography.labelLarge
                     )
@@ -543,22 +459,146 @@ private fun EditSongContent(
                         colors = textFieldColors,
                         shape = textFieldShape,
                         onValueChange = { genre = it },
-                        placeholder = { Text(stringResource(R.string.song_field_genre)) },
-                        leadingIcon = { Icon(Icons.Rounded.Category, tint = MaterialTheme.colorScheme.secondary, contentDescription = stringResource(R.string.song_field_genre)) },
+                        placeholder = { Text(stringResource(R.string.edit_song_field_genre)) },
+                        leadingIcon = { Icon(Icons.Rounded.Category, tint = MaterialTheme.colorScheme.secondary, contentDescription = stringResource(R.string.edit_song_field_genre)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
                 }
             }
 
-            // --- Campo de Letra ---
+            // --- Campo de Compositor ---
             item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         modifier = Modifier.padding(start = 4.dp),
-                        text = stringResource(R.string.lyrics),
+                        text = stringResource(R.string.edit_song_field_composer),
+                        color = MaterialTheme.colorScheme.tertiary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    OutlinedTextField(
+                        value = composer,
+                        colors = textFieldColors,
+                        shape = textFieldShape,
+                        onValueChange = { composer = it },
+                        placeholder = { Text(stringResource(R.string.edit_song_field_composer)) },
+                        leadingIcon = { Icon(Icons.Rounded.MusicNote, tint = MaterialTheme.colorScheme.tertiary, contentDescription = stringResource(R.string.edit_song_field_composer)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            }
+
+            // --- Campo de Track Number ---
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        modifier = Modifier.padding(start = 4.dp),
+                        text = stringResource(R.string.edit_song_field_track_number),
+                        color = MaterialTheme.colorScheme.secondary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    OutlinedTextField(
+                        value = trackNumber,
+                        shape = textFieldShape,
+                        colors = textFieldColors,
+                        onValueChange = { trackNumber = it },
+                        placeholder = { Text(stringResource(R.string.edit_song_field_track_number)) },
+                        leadingIcon = { Icon(Icons.Rounded.FormatListNumbered, tint = MaterialTheme.colorScheme.secondary, contentDescription = stringResource(R.string.edit_song_field_track_number)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+            }
+
+            // --- Campo de Disc Number ---
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        modifier = Modifier.padding(start = 4.dp),
+                        text = stringResource(R.string.edit_song_field_disc_number),
+                        color = MaterialTheme.colorScheme.secondary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    OutlinedTextField(
+                        value = discNumber,
+                        shape = textFieldShape,
+                        colors = textFieldColors,
+                        onValueChange = { discNumber = it },
+                        placeholder = { Text(stringResource(R.string.edit_song_field_disc_number)) },
+                        leadingIcon = { Icon(Icons.Rounded.FormatListNumbered, tint = MaterialTheme.colorScheme.secondary, contentDescription = stringResource(R.string.edit_song_field_disc_number)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+            }
+
+            // --- Campo de ReplayGain Track ---
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        modifier = Modifier.padding(start = 4.dp),
+                        text = stringResource(R.string.edit_song_field_replaygain_track),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    OutlinedTextField(
+                        value = replayGainTrackGainDb,
+                        shape = textFieldShape,
+                        colors = textFieldColors,
+                        onValueChange = { replayGainTrackGainDb = it },
+                        placeholder = { Text(stringResource(R.string.edit_song_replaygain_track_placeholder)) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.RepeatOne,
+                                tint = MaterialTheme.colorScheme.primary,
+                                contentDescription = stringResource(R.string.edit_song_field_replaygain_track)
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                }
+            }
+
+            // --- Campo de ReplayGain Album ---
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        modifier = Modifier.padding(start = 4.dp),
+                        text = stringResource(R.string.edit_song_field_replaygain_album),
+                        color = MaterialTheme.colorScheme.tertiary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    OutlinedTextField(
+                        value = replayGainAlbumGainDb,
+                        shape = textFieldShape,
+                        colors = textFieldColors,
+                        onValueChange = { replayGainAlbumGainDb = it },
+                        placeholder = { Text(stringResource(R.string.edit_song_replaygain_album_placeholder)) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.Repeat,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                contentDescription = stringResource(R.string.edit_song_field_replaygain_album)
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                }
+            }
+
+            // --- Campo de Letra ---
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        modifier = Modifier.padding(start = 4.dp),
+                        text = stringResource(R.string.lyrics_title),
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelLarge
                     )
@@ -571,8 +611,8 @@ private fun EditSongContent(
                             colors = textFieldColors,
                             shape = textFieldShape,
                             onValueChange = { lyrics = it },
-                            placeholder = { Text(stringResource(R.string.lyrics)) },
-                            leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Notes, tint = MaterialTheme.colorScheme.primary, contentDescription = stringResource(R.string.lyrics)) },
+                            placeholder = { Text(stringResource(R.string.lyrics_title)) },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Notes, tint = MaterialTheme.colorScheme.primary, contentDescription = stringResource(R.string.lyrics_title)) },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(150.dp)
@@ -589,7 +629,7 @@ private fun EditSongContent(
                         ) {
                             Icon(
                                 painter = painterResource(id = R.drawable.rounded_search_24),
-                                contentDescription = stringResource(R.string.cd_search_lyrics_lrclib)
+                                contentDescription = stringResource(R.string.edit_song_cd_search_lyrics_lrclib)
                             )
                         }
                     }
@@ -621,7 +661,7 @@ private fun EditSongContent(
                                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         ) {
-                            Text(stringResource(R.string.cancel))
+                            Text(stringResource(R.string.common_cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Spacer(
                             modifier = Modifier.width(8.dp)
@@ -634,6 +674,8 @@ private fun EditSongContent(
                                     title.trim(),
                                     artist.trim(),
                                     album.trim(),
+                                    albumArtist.trim(),
+                                    composer.trim(),
                                     genre.trim(),
                                     lyrics,
                                     resolvedTrackNumber,
@@ -645,7 +687,7 @@ private fun EditSongContent(
                             },
                             modifier = Modifier.height(48.dp)
                         ) {
-                            Text(stringResource(R.string.action_save))
+                            Text(stringResource(R.string.common_save))
                         }
                     }
                 )
@@ -718,7 +760,7 @@ private fun CoverArtEditorCard(
                         preview != null -> {
                             Image(
                                 bitmap = preview,
-                                contentDescription = stringResource(R.string.cd_cover_art_preview),
+                                contentDescription = stringResource(R.string.edit_song_cd_cover_preview),
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
                             )
@@ -727,7 +769,7 @@ private fun CoverArtEditorCard(
                         albumArtUri != null -> {
                             SmartImage(
                                 model = albumArtUri,
-                                contentDescription = stringResource(R.string.cd_current_song_cover_art),
+                                contentDescription = stringResource(R.string.edit_song_cd_current_cover),
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,
                                 placeholderResId = R.drawable.rounded_music_note_24,
@@ -774,14 +816,14 @@ private fun CoverArtEditorCard(
                 FilledTonalButton(onClick = onPickNewArt) {
                     Icon(Icons.Rounded.Image, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.edit_song_change_cover_art))
+                    Text(stringResource(R.string.edit_song_action_change_cover), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
 
                 if (preview != null || isDeleted) {
                     TextButton(onClick = onReset) {
                         Icon(Icons.Rounded.Restore, contentDescription = null)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(stringResource(R.string.action_reset))
+                        Text(stringResource(R.string.common_reset), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 } else if (albumArtUri != null) {
                     FilledTonalButton(
@@ -793,7 +835,7 @@ private fun CoverArtEditorCard(
                     ) {
                         Icon(Icons.Rounded.Delete, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.edit_song_delete_cover_art))
+                        Text(stringResource(R.string.edit_song_action_delete_cover), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
@@ -801,14 +843,14 @@ private fun CoverArtEditorCard(
     }
 }
 
-private data class CoverArtCropResult(
+data class CoverArtCropResult(
     val preview: ImageBitmap,
     val update: CoverArtUpdate,
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
-private fun CoverArtCropperDialog(
+fun CoverArtCropperDialog(
     sourceUri: Uri,
     onDismiss: () -> Unit,
     onConfirm: (CoverArtCropResult) -> Unit,
@@ -823,6 +865,7 @@ private fun CoverArtCropperDialog(
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var containerSize by remember { mutableStateOf(0f) }
+    val unableToLoadImageText = stringResource(R.string.edit_song_unable_to_load_image)
 
     LaunchedEffect(sourceUri) {
         isLoading = true
@@ -831,7 +874,7 @@ private fun CoverArtCropperDialog(
         if (bitmap != null) {
             loadedBitmap = bitmap.asImageBitmap()
         } else {
-            loadError = context.getString(R.string.edit_song_unable_to_load_image)
+            loadError = unableToLoadImageText
         }
         isLoading = false
         scale = 1f
@@ -895,80 +938,72 @@ private fun CoverArtCropperDialog(
                             .size(cropSide)
                             .align(Alignment.Center)
                             .clip(RoundedCornerShape(32.dp))
-                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                            .padding(12.dp)
+                            .background(MaterialTheme.colorScheme.surfaceDim)
+                            .clipToBounds()
+                            .transformable(transformableState)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(MaterialTheme.colorScheme.surfaceDim)
-                                .clipToBounds()
-                        ) {
-                            when {
-                                isLoading -> {
-                                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                                }
+                        when {
+                            isLoading -> {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.align(Alignment.Center)
+                                )
+                            }
 
-                                loadError != null -> {
-                                    Text(
-                                        text = loadError!!,
-                                        style = MaterialTheme.typography.bodyMedium,
+                            loadError != null -> {
+                                Text(
+                                    text = loadError!!,
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .padding(16.dp)
+                                )
+                            }
+
+                            loadedBitmap != null -> {
+                                val bitmap = loadedBitmap!!
+                                val baseScale = maxOf(containerSize / bitmap.width, containerSize / bitmap.height)
+                                val displayWidth = with(LocalDensity.current) { (bitmap.width * baseScale).toDp() }
+                                val displayHeight = with(LocalDensity.current) { (bitmap.height * baseScale).toDp() }
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(MaterialTheme.colorScheme.surfaceDim)
+                                        .clipToBounds()
+                                        .capturable(controller = captureController)
+                                ) {
+                                    Image(
+                                        bitmap = loadedBitmap!!,
+                                        contentDescription = null,
                                         modifier = Modifier
                                             .align(Alignment.Center)
-                                            .padding(16.dp),
-                                        textAlign = TextAlign.Center
+                                            .requiredSize(displayWidth, displayHeight)
+                                            .graphicsLayer {
+                                                scaleX = scale
+                                                scaleY = scale
+                                                translationX = offset.x
+                                                translationY = offset.y
+                                            }
                                     )
                                 }
 
-                                 loadedBitmap != null -> {
-                                    val bitmap = loadedBitmap!!
-                                    val baseScale = maxOf(containerSize / bitmap.width, containerSize / bitmap.height)
-                                    val displayWidth = with(LocalDensity.current) { (bitmap.width * baseScale).toDp() }
-                                    val displayHeight = with(LocalDensity.current) { (bitmap.height * baseScale).toDp() }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(RoundedCornerShape(28.dp))
-                                            .background(MaterialTheme.colorScheme.surface)
-                                            .clipToBounds()
-                                            .capturable(controller = captureController)
-                                            .transformable(transformableState)
-                                    ) {
-                                        Image(
-                                            bitmap = bitmap,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .requiredSize(displayWidth, displayHeight)
-                                                .graphicsLayer {
-                                                    scaleX = scale
-                                                    scaleY = scale
-                                                    translationX = offset.x
-                                                    translationY = offset.y
-                                                }
+                                Canvas(modifier = Modifier.matchParentSize()) {
+                                    val step = size.width / 3f
+                                    for (index in 1 until 3) {
+                                        val lineOffset = step * index
+                                        drawLine(
+                                            color = gridColor,
+                                            start = Offset(lineOffset, 0f),
+                                            end = Offset(lineOffset, size.height),
+                                            strokeWidth = 2f
+                                        )
+                                        drawLine(
+                                            color = gridColor,
+                                            start = Offset(0f, lineOffset),
+                                            end = Offset(size.width, lineOffset),
+                                            strokeWidth = 2f
                                         )
                                     }
-
-                                    Canvas(modifier = Modifier.matchParentSize()) {
-                                        val step = size.width / 3f
-                                        for (index in 1 until 3) {
-                                            val lineOffset = step * index
-                                            drawLine(
-                                                color = gridColor,
-                                                start = Offset(lineOffset, 0f),
-                                                end = Offset(lineOffset, size.height),
-                                                strokeWidth = 2f
-                                            )
-                                            drawLine(
-                                                color = gridColor,
-                                                start = Offset(0f, lineOffset),
-                                                end = Offset(size.width, lineOffset),
-                                                strokeWidth = 2f
-                                            )
-                                        }
-                                        drawRect(color = gridColor, style = Stroke(width = 3f))
-                                    }
+                                    drawRect(color = gridColor, style = Stroke(width = 3f))
                                 }
                             }
                         }
@@ -990,7 +1025,7 @@ private fun CoverArtCropperDialog(
                         enabled = !isSaving,
                         onClick = onDismiss
                     ) {
-                        Text(stringResource(R.string.cancel))
+                        Text(stringResource(R.string.common_cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
 
                     val canConfirm = !isLoading && loadError == null && loadedBitmap != null
@@ -1029,7 +1064,7 @@ private fun CoverArtCropperDialog(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                         }
-                        Text(stringResource(R.string.edit_song_apply_cover_art))
+                        Text(stringResource(R.string.edit_song_action_apply_cover))
                     }
                 }
             }

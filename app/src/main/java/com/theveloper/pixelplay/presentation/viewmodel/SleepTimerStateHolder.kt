@@ -15,7 +15,6 @@ import com.theveloper.pixelplay.data.EotStateHolder
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,13 +39,12 @@ import javax.inject.Singleton
  */
 @Singleton
 class SleepTimerStateHolder @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
 ) {
     // Timer State
     private val _sleepTimerEndTimeMillis = MutableStateFlow<Long?>(null)
-    val sleepTimerEndTimeMillis: StateFlow<Long?> = _sleepTimerEndTimeMillis.asStateFlow()
 
-    private val _isEndOfTrackTimerActive = MutableStateFlow(false)
+    private val _isEndOfTrackTimerActive = MutableStateFlow(value = false)
     val isEndOfTrackTimerActive: StateFlow<Boolean> = _isEndOfTrackTimerActive.asStateFlow()
 
     private val _activeTimerValueDisplay = MutableStateFlow<String?>(null)
@@ -72,6 +70,19 @@ class SleepTimerStateHolder @Inject constructor(
     private var mediaControllerProvider: (() -> MediaController?)? = null
     private var currentSongIdProvider: (() -> StateFlow<String?>)? = null
     private var songTitleResolver: ((String?) -> String)? = null
+
+    private fun sleepTimerPendingIntent(): PendingIntent {
+        val intent = Intent(context, SleepTimerReceiver::class.java).apply {
+            action = SLEEP_TIMER_ACTION
+            setPackage(context.packageName)
+        }
+        return PendingIntent.getBroadcast(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
 
     /**
      * Initialize with dependencies from ViewModel.
@@ -115,13 +126,7 @@ class SleepTimerStateHolder @Inject constructor(
         )
 
         // Schedule alarm for reliable triggering
-        val intent = Intent(context, SleepTimerReceiver::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val pendingIntent = sleepTimerPendingIntent()
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -129,26 +134,20 @@ class SleepTimerStateHolder @Inject constructor(
                     alarmManager.setExactAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         endTime,
-                        pendingIntent
+                        pendingIntent,
                     )
                 } else {
                     alarmManager.setAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         endTime,
-                        pendingIntent
+                        pendingIntent,
                     )
                 }
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            } else {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     endTime,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.RTC_WAKEUP,
-                    endTime,
-                    pendingIntent
+                    pendingIntent,
                 )
             }
         } catch (e: SecurityException) {
@@ -156,7 +155,7 @@ class SleepTimerStateHolder @Inject constructor(
             alarmManager.set(
                 AlarmManager.RTC_WAKEUP,
                 endTime,
-                pendingIntent
+                pendingIntent,
             )
         }
 
@@ -219,9 +218,10 @@ class SleepTimerStateHolder @Inject constructor(
                 currentSongIdProvider?.invoke()
                     ?.filterNotNull() // skip initial null emission from stateIn initialValue
                     ?.collect { newSongId ->
-                    if (_isEndOfTrackTimerActive.value &&
-                        EotStateHolder.eotTargetSongId.value != null &&
-                        newSongId != EotStateHolder.eotTargetSongId.value) {
+                        if (_isEndOfTrackTimerActive.value &&
+                            (EotStateHolder.eotTargetSongId.value != null) &&
+                            (newSongId != EotStateHolder.eotTargetSongId.value)
+                        ) {
 
                         val oldSongTitle = songTitleResolver?.invoke(EotStateHolder.eotTargetSongId.value)
                             ?: context.getString(R.string.sleep_timer_label_previous_track)
@@ -244,7 +244,7 @@ class SleepTimerStateHolder @Inject constructor(
             }
 
             scope.launch {
-                toastEmitter?.invoke(context.getString(R.string.sleep_timer_eot_stop_at_end_toast))
+                toastEmitter?.invoke(context.getString(R.string.sleep_timer_eot_toast))
             }
         } else {
             eotSongMonitorJob?.cancel()
@@ -262,13 +262,7 @@ class SleepTimerStateHolder @Inject constructor(
         val wasAnythingActive = _activeTimerValueDisplay.value != null
 
         // Cancel Alarm
-        val intent = Intent(context, SleepTimerReceiver::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val pendingIntent = sleepTimerPendingIntent()
         alarmManager.cancel(pendingIntent)
 
         // Cancel duration timer
@@ -296,13 +290,6 @@ class SleepTimerStateHolder @Inject constructor(
     }
 
     /**
-     * Update play count for counted play display.
-     */
-    fun updatePlayCount(count: Float) {
-        _playCount.value = count
-    }
-
-    /**
      * Cleanup when ViewModel is cleared.
      */
     fun onCleared() {
@@ -313,5 +300,9 @@ class SleepTimerStateHolder @Inject constructor(
         mediaControllerProvider = null
         currentSongIdProvider = null
         songTitleResolver = null
+    }
+
+    private companion object {
+        const val SLEEP_TIMER_ACTION = "com.theveloper.pixelplay.action.SLEEP_TIMER_EXPIRED"
     }
 }

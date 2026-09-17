@@ -3,6 +3,7 @@
 package com.theveloper.pixelplay.presentation.screens
 
 import com.theveloper.pixelplay.presentation.navigation.navigateSafely
+import com.theveloper.pixelplay.presentation.navigation.navigateSafelyReplacing
 
 import android.os.Trace
 import android.text.format.Formatter
@@ -119,7 +120,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.theveloper.pixelplay.ui.theme.LocalPixelPlayDarkTheme
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -139,6 +140,7 @@ import com.theveloper.pixelplay.data.model.SortOption
 import com.theveloper.pixelplay.data.model.StorageFilter
 import com.theveloper.pixelplay.presentation.components.MiniPlayerHeight
 import com.theveloper.pixelplay.presentation.components.SmartImage
+import com.theveloper.pixelplay.presentation.components.resolveMainScreenBottomGradientHeight
 import com.theveloper.pixelplay.presentation.components.resolveNavBarOccupiedHeight
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
@@ -146,6 +148,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.ui.res.stringResource
 import com.theveloper.pixelplay.presentation.components.PlaylistArtCollage
 import com.theveloper.pixelplay.presentation.components.ReorderTabsSheet
+import com.theveloper.pixelplay.presentation.components.EditMultipleSongsSheet
 import com.theveloper.pixelplay.presentation.components.SongInfoBottomSheet
 import com.theveloper.pixelplay.presentation.components.subcomps.LibraryActionRow
 import com.theveloper.pixelplay.presentation.navigation.Screen
@@ -239,6 +242,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.LoadState
 import com.theveloper.pixelplay.presentation.components.ExpressiveScrollBar
+import com.theveloper.pixelplay.ui.theme.LocalShowScrollbar
 import com.theveloper.pixelplay.presentation.components.LibrarySortBottomSheet
 import com.theveloper.pixelplay.presentation.components.subcomps.EnhancedSongListItem
 import com.theveloper.pixelplay.data.service.wear.PhoneWatchTransferState
@@ -249,11 +253,14 @@ import kotlin.math.abs
 val ListExtraBottomGap = 30.dp
 val PlayerSheetCollapsedCornerRadius = 32.dp
 private const val MAX_ALBUM_MULTI_SELECTION = 6
-private const val ENABLE_FOLDERS_SOURCE_TOGGLE = false
+private const val ENABLE_FOLDERS_SOURCE_TOGGLE = true
 private const val ENABLE_FOLDERS_STORAGE_FILTER = false
 private const val FOLDER_NAVIGATION_ROOT_KEY = "__folder_root__"
 private const val FOLDER_NAVIGATION_FORWARD = 1
 private const val FOLDER_NAVIGATION_BACKWARD = -1
+private const val PULL_REFRESH_MIN_VISIBLE_MS = 900L
+private const val PULL_REFRESH_MAX_VISIBLE_MS = 1_500L
+private const val INLINE_SYNC_MIN_VISIBLE_MS = 600L
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -263,8 +270,8 @@ private fun WatchTransferProgressDialog(
     onCancelTransfer: () -> Unit,
 ) {
     val context = LocalContext.current
-    val startingTransfer = stringResource(R.string.presentation_batch_d_watch_starting_transfer)
-    val preparingTransfer = stringResource(R.string.presentation_batch_d_watch_preparing_transfer)
+    val startingTransfer = stringResource(R.string.watch_transfer_status_starting)
+    val preparingTransfer = stringResource(R.string.watch_transfer_status_preparing_transfer)
     val animatedProgress by animateFloatAsState(
         targetValue = transfer.progress.coerceIn(0f, 1f),
         animationSpec = tween(durationMillis = 300),
@@ -274,16 +281,16 @@ private fun WatchTransferProgressDialog(
     val bytesText = if (transfer.totalBytes > 0L) {
         val sent = Formatter.formatFileSize(context, transfer.bytesTransferred)
         val total = Formatter.formatFileSize(context, transfer.totalBytes)
-        stringResource(R.string.presentation_batch_h_transfer_bytes_progress, sent, total)
+        stringResource(R.string.watch_transfer_bytes_progress, sent, total)
     } else {
         startingTransfer
     }
     val statusText = when (transfer.status) {
-        WearTransferProgress.STATUS_TRANSFERRING -> stringResource(R.string.presentation_batch_d_watch_status_transferring)
-        WearTransferProgress.STATUS_COMPLETED -> stringResource(R.string.presentation_batch_d_watch_status_completed)
-        WearTransferProgress.STATUS_FAILED -> stringResource(R.string.presentation_batch_d_watch_status_failed)
-        WearTransferProgress.STATUS_CANCELLED -> stringResource(R.string.presentation_batch_d_watch_status_cancelled)
-        else -> stringResource(R.string.presentation_batch_d_watch_status_preparing)
+        WearTransferProgress.STATUS_TRANSFERRING -> stringResource(R.string.watch_transfer_status_transferring)
+        WearTransferProgress.STATUS_COMPLETED -> stringResource(R.string.watch_transfer_status_completed)
+        WearTransferProgress.STATUS_FAILED -> stringResource(R.string.watch_transfer_status_failed)
+        WearTransferProgress.STATUS_CANCELLED -> stringResource(R.string.watch_transfer_status_cancelled)
+        else -> stringResource(R.string.watch_transfer_status_preparing)
     }
 
     Dialog(
@@ -306,7 +313,7 @@ private fun WatchTransferProgressDialog(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = stringResource(R.string.presentation_batch_d_watch_sending_title),
+                    text = stringResource(R.string.watch_transfer_dialog_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold
@@ -324,7 +331,7 @@ private fun WatchTransferProgressDialog(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = stringResource(R.string.presentation_batch_g_sync_percent, progressPercent),
+                        text = stringResource(R.string.common_percentage_text, progressPercent),
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontSize = MaterialTheme.typography.labelLarge.fontSize * 1.4f
                         ),
@@ -350,7 +357,7 @@ private fun WatchTransferProgressDialog(
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = stringResource(R.string.presentation_batch_f_status_bullet_step, statusText, bytesText),
+                    text = stringResource(R.string.watch_transfer_bullet_step, statusText, bytesText),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -371,7 +378,7 @@ private fun WatchTransferProgressDialog(
                         contentColor = MaterialTheme.colorScheme.onError
                     )
                 ) {
-                    Text(text = stringResource(R.string.presentation_batch_d_watch_cancel_transfer))
+                    Text(text = stringResource(R.string.watch_transfer_action_cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -393,7 +400,6 @@ private data class LibraryScreenPlayerProjection(
     val isSdCardAvailable: Boolean = false,
     val musicFolders: ImmutableList<MusicFolder> = persistentListOf(),
     val isLoadingLibraryCategories: Boolean = true,
-    val isGeneratingAiMetadata: Boolean = false,
     val isSyncingLibrary: Boolean = false,
     val isLoadingInitialSongs: Boolean = true,
     val hideLocalMedia: Boolean = false
@@ -415,7 +421,6 @@ private fun PlayerUiState.toLibraryScreenProjection(): LibraryScreenPlayerProjec
         isSdCardAvailable = isSdCardAvailable,
         musicFolders = musicFolders,
         isLoadingLibraryCategories = isLoadingLibraryCategories,
-        isGeneratingAiMetadata = isGeneratingAiMetadata,
         isSyncingLibrary = isSyncingLibrary,
         isLoadingInitialSongs = isLoadingInitialSongs,
         hideLocalMedia = hideLocalMedia
@@ -440,7 +445,13 @@ fun LibraryScreen(
     val scope = rememberCoroutineScope() // Mantener si se usa para acciones de UI
     val syncManager = playerViewModel.syncManager
     var isRefreshing by remember { mutableStateOf(false) }
-    val isSyncing by syncManager.isSyncing.collectAsStateWithLifecycle(initialValue = false)
+    // The pull-to-refresh spinner is reserved for user gestures. Automatic sync
+    // and long-running refresh work move through the slim linear indicator under
+    // LibraryActionRow so the list stays put.
+    val isFetchingChanges by syncManager.isFetchingChanges
+        .collectAsStateWithLifecycle(initialValue = false)
+    val isSyncing by syncManager.isSyncing
+        .collectAsStateWithLifecycle(initialValue = false)
     // NOTE: syncProgress is NOT collected here. It is collected inside LibrarySyncOverlay
     // to avoid triggering recomposition of the entire LibraryScreen on every progress tick.
 
@@ -513,6 +524,7 @@ fun LibraryScreen(
     val selectedAlbumIds = remember(selectedAlbums) { selectedAlbums.map { it.id }.toSet() }
     val isAlbumSelectionMode = selectedAlbums.isNotEmpty()
     var showAlbumMultiSelectionSheet by remember { mutableStateOf(false) }
+    var showBatchEditSheet by remember { mutableStateOf(false) }
 
     var songsShowLocateButton by remember { mutableStateOf(false) }
     var likedShowLocateButton by remember { mutableStateOf(false) }
@@ -520,6 +532,7 @@ fun LibraryScreen(
     var songsLocateAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var likedLocateAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var foldersLocateAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingFoldersLocatePath by remember { mutableStateOf<String?>(null) }
 
     // Multi-selection callbacks
     val onSongLongPress: (Song) -> Unit = remember(multiSelectionState, haptic) {
@@ -539,7 +552,7 @@ fun LibraryScreen(
             if (existingIndex >= 0) {
                 selectedAlbums = selectedAlbums.toMutableList().also { it.removeAt(existingIndex) }
             } else if (selectedAlbums.size >= MAX_ALBUM_MULTI_SELECTION) {
-                playerViewModel.sendToast(context.getString(R.string.presentation_batch_d_max_albums_selection, MAX_ALBUM_MULTI_SELECTION))
+                playerViewModel.sendToast(context.getString(R.string.library_toast_max_albums_selection, MAX_ALBUM_MULTI_SELECTION))
             } else {
                 selectedAlbums = selectedAlbums + album
             }
@@ -592,36 +605,80 @@ fun LibraryScreen(
             showSongInfoBottomSheet = true
         }
     }
-    // Pull-to-refresh uses incremental sync for speed
-    // We enforce a minimum duration of 3.5s for the animation as requested by the user.
+    // Pull-to-refresh uses incremental sync for speed. The spinner gives manual
+    // refreshes a short tactile confirmation, then longer work hands off to the
+    // inline sync indicator.
     var isMinDelayActive by remember { mutableStateOf(false) }
+    var refreshGeneration by remember { mutableStateOf(0) }
 
-    val onRefresh: () -> Unit = remember {
+    val onRefresh: () -> Unit = remember(scope, syncManager) {
         {
+            val currentRefreshGeneration = refreshGeneration + 1
+            refreshGeneration = currentRefreshGeneration
             isMinDelayActive = true
             isRefreshing = true
             syncManager.incrementalSync()
             scope.launch {
-                kotlinx.coroutines.delay(3500)
+                kotlinx.coroutines.delay(PULL_REFRESH_MIN_VISIBLE_MS)
+                if (currentRefreshGeneration != refreshGeneration) return@launch
                 isMinDelayActive = false
-                // If sync finished during the delay, the LaunchedEffect blocked the update.
-                // We must manually check and turn it off if needed.
-                val currentlySyncing = syncManager.isSyncing.first()
-                if (!currentlySyncing) {
+                // If the changes phase already finished while the tactile minimum was
+                // still active, hide the spinner now.
+                val stillFetching = syncManager.isFetchingChanges.first()
+                if (!stillFetching) {
                     isRefreshing = false
+                    return@launch
                 }
+
+                val remainingVisibleMs =
+                    (PULL_REFRESH_MAX_VISIBLE_MS - PULL_REFRESH_MIN_VISIBLE_MS)
+                        .coerceAtLeast(0L)
+                if (remainingVisibleMs > 0L) {
+                    kotlinx.coroutines.delay(remainingVisibleMs)
+                }
+                if (currentRefreshGeneration != refreshGeneration) return@launch
+                // Long-running refresh work continues through the inline indicator.
+                isRefreshing = false
             }
         }
     }
 
-    LaunchedEffect(isSyncing) {
-        if (isSyncing) {
-            isRefreshing = true
-        } else {
-            // Only hide refresh indicator if the minimum delay has passed
-            if (!isMinDelayActive) {
-                isRefreshing = false
+    LaunchedEffect(isFetchingChanges) {
+        if (!isFetchingChanges && !isMinDelayActive) {
+            isRefreshing = false
+        }
+    }
+
+    // Minimum-visible gate for the inline sync indicator. It covers automatic
+    // startup syncs and manual refreshes once the pull spinner has handed off.
+    // Fast no-op phases finish in tens of milliseconds, so the small linear bar is
+    // held briefly to avoid single-frame flicker.
+    var inlineSyncVisible by remember { mutableStateOf(false) }
+    var inlineSyncShownAt by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(isSyncing, isRefreshing) {
+        if (isSyncing && !isRefreshing) {
+            if (!inlineSyncVisible) {
+                inlineSyncShownAt = System.currentTimeMillis()
+                inlineSyncVisible = true
             }
+        } else if (isRefreshing) {
+            inlineSyncVisible = false
+            inlineSyncShownAt = null
+        } else if (inlineSyncVisible) {
+            val shownAt = inlineSyncShownAt
+            val elapsed = if (shownAt != null) {
+                System.currentTimeMillis() - shownAt
+            } else {
+                INLINE_SYNC_MIN_VISIBLE_MS
+            }
+            val remaining = INLINE_SYNC_MIN_VISIBLE_MS - elapsed
+            if (remaining > 0) {
+                kotlinx.coroutines.delay(remaining)
+            }
+            // If sync flipped back to visible during the delay this LaunchedEffect
+            // is cancelled and re-runs, so reaching this line means we should hide.
+            inlineSyncVisible = false
+            inlineSyncShownAt = null
         }
     }
 
@@ -685,7 +742,7 @@ fun LibraryScreen(
         playlistViewModel.playlistCreationEvent.collect { success ->
             if (success) {
                 showCreatePlaylistDialog = false
-                Toast.makeText(context, context.getString(R.string.toast_playlist_created), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.library_toast_playlist_created), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -744,6 +801,7 @@ fun LibraryScreen(
     val systemNavBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val navBarCompactMode by playerViewModel.navBarCompactMode.collectAsStateWithLifecycle()
     val bottomBarHeightDp = resolveNavBarOccupiedHeight(systemNavBarInset, navBarCompactMode)
+    val bottomGradientHeight = resolveMainScreenBottomGradientHeight(navBarCompactMode)
 
     val dm = LocalPixelPlayDarkTheme.current
 
@@ -805,7 +863,7 @@ fun LibraryScreen(
                         } else {
                             Text(
                                 modifier = Modifier.padding(start = 8.dp),
-                                text = stringResource(R.string.presentation_batch_d_library_title),
+                                text = stringResource(R.string.library_screen_title),
                                 fontFamily = GoogleSansRounded,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -839,11 +897,11 @@ fun LibraryScreen(
                                 ) {
                                     Icon(
                                         painter = painterResource(R.drawable.rounded_watch_arrow_down_24),
-                                        contentDescription = stringResource(R.string.presentation_batch_d_watch_transfer_cd),
+                                        contentDescription = stringResource(R.string.library_cd_watch_transfer),
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Text(
-                                        text = stringResource(R.string.presentation_batch_g_sync_percent, watchTransferPercent),
+                                        text = stringResource(R.string.common_percentage_text, watchTransferPercent),
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -862,7 +920,7 @@ fun LibraryScreen(
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.rounded_settings_24),
-                                contentDescription = stringResource(R.string.presentation_batch_d_open_settings_cd)
+                                contentDescription = stringResource(R.string.library_cd_open_settings)
                             )
                         }
                     },
@@ -908,7 +966,7 @@ fun LibraryScreen(
                                 }
                             ) {
                                 Text(
-                                    text = tabId.title,
+                                    text = stringResource(tabId.titleRes).uppercase(),
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = if (currentTabIndex == index) FontWeight.Bold else FontWeight.Medium
                                 )
@@ -916,13 +974,13 @@ fun LibraryScreen(
                         }
                         TabAnimation(
                             index = -1,
-                            title = stringResource(R.string.presentation_batch_d_edit_library_tabs_cd),
+                            title = stringResource(R.string.library_tab_edit),
                             selectedIndex = currentTabIndex,
                             onClick = { showReorderTabsSheet = true }
                         ) {
                             Icon(
                                 Icons.Default.Edit,
-                                contentDescription = stringResource(R.string.presentation_batch_d_reorder_tabs_cd),
+                                contentDescription = stringResource(R.string.library_cd_reorder_tabs),
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                             )
                         }
@@ -1048,10 +1106,6 @@ fun LibraryScreen(
                                 }
                             }
                         }
-                        val allSongsLazyPagingItems = libraryViewModel.songsPagingFlow.collectAsLazyPagingItems()
-                        val albumsLazyPagingItems = libraryViewModel.albumsPagingFlow.collectAsLazyPagingItems()
-                        val artistsLazyPagingItems = libraryViewModel.artistsPagingFlow.collectAsLazyPagingItems()
-                        val favoritePagingItems = libraryViewModel.favoritesPagingFlow.collectAsLazyPagingItems()
                         val isLibraryLoading by libraryViewModel.isLoadingLibrary.collectAsStateWithLifecycle()
                         val hasCurrentSong by remember(playerViewModel) {
                             playerViewModel.stablePlayerState
@@ -1147,7 +1201,7 @@ fun LibraryScreen(
                                             if (remaining <= 0) {
                                                 playerViewModel.sendToast(
                                                     context.getString(
-                                                        R.string.presentation_batch_d_max_albums_selection,
+                                                        R.string.library_toast_max_albums_selection,
                                                         MAX_ALBUM_MULTI_SELECTION
                                                     )
                                                 )
@@ -1170,7 +1224,11 @@ fun LibraryScreen(
                                         onSelectAll = {
                                             when (tabTitles.getOrNull(currentTabIndex)?.toLibraryTabIdOrNull()) {
                                                 LibraryTabId.LIKED -> {
-                                                    multiSelectionState.selectAll(favoritePagingItems.itemSnapshotList.items)
+                                                    scope.launch {
+                                                        val songsToSelect =
+                                                            playerViewModel.getSongsForCurrentFavoriteSelection()
+                                                        multiSelectionState.selectAll(songsToSelect)
+                                                    }
                                                 }
                                                 LibraryTabId.FOLDERS -> {
                                                     val songsToSelect =
@@ -1232,6 +1290,14 @@ fun LibraryScreen(
                             }
                         }
 
+                        // Slim inline sync indicator. Automatic startup syncs use this
+                        // instead of pulling the list down, and manual refreshes hand off
+                        // to it when the worker takes longer than the pull gesture window.
+                        LibraryInlineSyncIndicator(
+                            visible = inlineSyncVisible && !isLibraryContentEmpty,
+                            syncManager = syncManager
+                        )
+
                         if (isSortSheetVisible && sanitizedSortOptions.isNotEmpty()) {
                             val currentSelectionKey = currentSelectedSortOption?.storageKey
                             val selectedOptionForSheet = sanitizedSortOptions.firstOrNull { option ->
@@ -1248,7 +1314,7 @@ fun LibraryScreen(
                             val isPlaylistsTab = currentTabId == LibraryTabId.PLAYLISTS
 
                             LibrarySortBottomSheet(
-                                title = stringResource(R.string.presentation_batch_d_sort_by),
+                                title = stringResource(R.string.library_sort_by_title),
                                 options = sanitizedSortOptions,
                                 selectedOption = selectedOptionForSheet,
                                 onDismiss = { playerViewModel.hideSortingSheet() },
@@ -1261,14 +1327,14 @@ fun LibraryScreen(
                                 },
                                 showViewToggle = isFoldersTab || isPlaylistsTab,
                                 viewSectionTitle = if (isPlaylistsTab) {
-                                    stringResource(R.string.presentation_batch_d_view_section_cloud)
+                                    stringResource(R.string.library_sort_section_cloud)
                                 } else {
-                                    stringResource(R.string.presentation_batch_d_view_section_view)
+                                    stringResource(R.string.library_sort_section_view)
                                 },
                                 viewToggleLabel = if (isPlaylistsTab) {
-                                    stringResource(R.string.presentation_batch_d_telegram_cloud_channels)
+                                    stringResource(R.string.library_sort_toggle_telegram_channels)
                                 } else {
-                                    stringResource(R.string.presentation_batch_d_playlist_view)
+                                    stringResource(R.string.library_sort_toggle_playlist_view)
                                 },
                                 viewToggleChecked = if (isPlaylistsTab) {
                                     playlistUiState.showTelegramCloudPlaylists
@@ -1304,7 +1370,7 @@ fun LibraryScreen(
                                                 inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 activeCornerRadius = 32.dp,
                                                 onClick = { playerViewModel.setAlbumsListView(false) },
-                                                text = stringResource(R.string.presentation_batch_d_view_grid),
+                                                text = stringResource(R.string.library_view_mode_grid),
                                                 imageVector = Icons.Rounded.ViewModule
                                             )
 
@@ -1318,7 +1384,7 @@ fun LibraryScreen(
                                                 inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 activeCornerRadius = 32.dp,
                                                 onClick = { playerViewModel.setAlbumsListView(true) },
-                                                text = stringResource(R.string.presentation_batch_d_view_list),
+                                                text = stringResource(R.string.library_view_mode_list),
                                                 imageVector = Icons.AutoMirrored.Rounded.ViewList
                                             )
                                         }
@@ -1340,7 +1406,7 @@ fun LibraryScreen(
                                                 inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 activeCornerRadius = 32.dp,
                                                 onClick = { playerViewModel.setFoldersSource(FolderSource.INTERNAL) },
-                                                text = stringResource(R.string.presentation_batch_d_storage_internal)
+                                                text = stringResource(R.string.library_storage_internal)
                                             )
                                             ToggleSegmentButton(
                                                 modifier = Modifier
@@ -1357,12 +1423,12 @@ fun LibraryScreen(
                                                         playerViewModel.setFoldersSource(FolderSource.SD_CARD)
                                                     }
                                                 },
-                                                text = stringResource(R.string.presentation_batch_d_storage_sd_card)
+                                                text = stringResource(R.string.library_storage_sd_card)
                                             )
                                         }
                                         if (!playerUiState.isSdCardAvailable) {
                                             Text(
-                                                text = stringResource(R.string.presentation_batch_d_sd_card_unavailable),
+                                                text = stringResource(R.string.library_storage_sd_card_unavailable),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.padding(top = 8.dp, start = 2.dp)
@@ -1373,7 +1439,7 @@ fun LibraryScreen(
                                 extraContent = {
                                     if (isPlaylistsTab && playlistUiState.showTelegramCloudPlaylists) {
                                         Text(
-                                            text = stringResource(R.string.presentation_batch_d_topics_display),
+                                            text = stringResource(R.string.library_telegram_topics_display_title),
                                             style = MaterialTheme.typography.headlineSmall,
                                             fontFamily = com.theveloper.pixelplay.ui.theme.GoogleSansRounded,
                                             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
@@ -1386,9 +1452,9 @@ fun LibraryScreen(
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             listOf(
-                                                com.theveloper.pixelplay.data.preferences.TelegramTopicDisplayMode.CHANNELS_ONLY to stringResource(R.string.presentation_batch_d_topic_mode_channels),
-                                                com.theveloper.pixelplay.data.preferences.TelegramTopicDisplayMode.TOPICS_ONLY to stringResource(R.string.presentation_batch_d_topic_mode_topics),
-                                                com.theveloper.pixelplay.data.preferences.TelegramTopicDisplayMode.CHANNELS_AND_TOPICS to stringResource(R.string.presentation_batch_d_topic_mode_both)
+                                                com.theveloper.pixelplay.data.preferences.TelegramTopicDisplayMode.CHANNELS_ONLY to stringResource(R.string.library_telegram_topic_mode_channels),
+                                                com.theveloper.pixelplay.data.preferences.TelegramTopicDisplayMode.TOPICS_ONLY to stringResource(R.string.library_telegram_topic_mode_topics),
+                                                com.theveloper.pixelplay.data.preferences.TelegramTopicDisplayMode.CHANNELS_AND_TOPICS to stringResource(R.string.library_telegram_topic_mode_both)
                                             ).forEach { (mode, label) ->
                                                 ToggleSegmentButton(
                                                     modifier = Modifier.weight(1f),
@@ -1404,24 +1470,26 @@ fun LibraryScreen(
                                             }
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        text = stringResource(R.string.presentation_batch_d_cloud_sources_heading),
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        fontFamily = com.theveloper.pixelplay.ui.theme.GoogleSansRounded,
-                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                        modifier = Modifier.padding(start = 2.dp, bottom = 8.dp)
-                                    )
-                                    com.theveloper.pixelplay.presentation.components.LibrarySheetToggleCard(
-                                        label = stringResource(R.string.presentation_batch_d_cloud_only),
-                                        checked = playerUiState.hideLocalMedia,
-                                        boxBackgroundColor = if (playerUiState.hideLocalMedia)
-                                            MaterialTheme.colorScheme.tertiary
-                                        else
-                                            MaterialTheme.colorScheme.surfaceContainerLow,
-                                        boxCornerRadius = if (playerUiState.hideLocalMedia) 18.dp else 50.dp,
-                                        onCheckedChange = { playerViewModel.setHideLocalMedia(it) }
-                                    )
+                                    if (!isFoldersTab) {
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text(
+                                            text = stringResource(R.string.library_cloud_sources_heading),
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            fontFamily = com.theveloper.pixelplay.ui.theme.GoogleSansRounded,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                            modifier = Modifier.padding(start = 2.dp, bottom = 8.dp)
+                                        )
+                                        com.theveloper.pixelplay.presentation.components.LibrarySheetToggleCard(
+                                            label = stringResource(R.string.library_cloud_only_label),
+                                            checked = playerUiState.hideLocalMedia,
+                                            boxBackgroundColor = if (playerUiState.hideLocalMedia)
+                                                MaterialTheme.colorScheme.tertiary
+                                            else
+                                                MaterialTheme.colorScheme.surfaceContainerLow,
+                                            boxCornerRadius = if (playerUiState.hideLocalMedia) 18.dp else 50.dp,
+                                            onCheckedChange = { playerViewModel.setHideLocalMedia(it) }
+                                        )
+                                    }
                                 }
                             )
                         }
@@ -1444,6 +1512,7 @@ fun LibraryScreen(
                                 )
                                 when (tabTitles.getOrNull(tabIndex)?.toLibraryTabIdOrNull()) {
                                     LibraryTabId.SONGS -> {
+                                        val allSongsLazyPagingItems = libraryViewModel.songsPagingFlow.collectAsLazyPagingItems()
                                         LibrarySongsTab(
                                             songs = allSongsLazyPagingItems,
                                             isLoading = isLibraryLoading,
@@ -1468,11 +1537,15 @@ fun LibraryScreen(
                                         )
                                     }
                                     LibraryTabId.ALBUMS -> {
+                                        val albumsLazyPagingItems = libraryViewModel.albumsPagingFlow.collectAsLazyPagingItems()
                                         val isLoading = playerUiState.isLoadingLibraryCategories
 
                                         val stableOnAlbumClick: (Long) -> Unit = remember(navController) {
                                             { albumId: Long ->
-                                                navController.navigateSafely(Screen.AlbumDetail.createRoute(albumId))
+                                                navController.navigateSafelyReplacing(
+                                                    route = Screen.AlbumDetail.createRoute(albumId),
+                                                    patternToPop = Screen.AlbumDetail.route
+                                                )
                                             }
                                         }
                                         LibraryAlbumsTab(
@@ -1495,6 +1568,7 @@ fun LibraryScreen(
                                     }
 
                                     LibraryTabId.ARTISTS -> {
+                                        val artistsLazyPagingItems = libraryViewModel.artistsPagingFlow.collectAsLazyPagingItems()
                                         val isLoading = playerUiState.isLoadingLibraryCategories
 
                                         LibraryArtistsTab(
@@ -1504,10 +1578,9 @@ fun LibraryScreen(
                                             bottomBarHeight = bottomBarHeightDp,
                                             currentArtistSortOption = playerUiState.currentArtistSortOption,
                                             onArtistClick = { artistId ->
-                                                navController.navigateSafely(
-                                                    Screen.ArtistDetail.createRoute(
-                                                        artistId
-                                                    )
+                                                navController.navigateSafelyReplacing(
+                                                    route = Screen.ArtistDetail.createRoute(artistId),
+                                                    patternToPop = Screen.ArtistDetail.route
                                                 )
                                             },
                                             isRefreshing = isRefreshing,
@@ -1535,6 +1608,7 @@ fun LibraryScreen(
                                     }
 
                                     LibraryTabId.LIKED -> {
+                                        val favoritePagingItems = libraryViewModel.favoritesPagingFlow.collectAsLazyPagingItems()
                                         LibraryFavoritesTab(
                                             favoriteSongs = favoritePagingItems,
                                             playerViewModel = playerViewModel,
@@ -1562,23 +1636,23 @@ fun LibraryScreen(
                                         val folders = playerUiState.musicFolders
                                         val currentFolder = playerUiState.currentFolder
                                         val isLoading = playerUiState.isLoadingLibraryCategories
-                                        val stablePlayerState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
-                                        val defaultFolderName = stringResource(R.string.presentation_batch_d_folder_name_fallback)
+                                        val defaultFolderName = stringResource(R.string.library_folder_name_fallback)
 
                                         LibraryFoldersTab(
                                             folders = folders,
                                             currentFolder = currentFolder,
                                             isLoading = isLoading,
                                             bottomBarHeight = bottomBarHeightDp,
-                                            stablePlayerState = stablePlayerState,
+                                            playerViewModel = playerViewModel,
                                             onNavigateBack = { playerViewModel.navigateBackFolder() },
                                             onFolderClick = { folderPath -> playerViewModel.navigateToFolder(folderPath) },
                                             onFolderAsPlaylistClick = { folder ->
                                                 val encodedPath = Uri.encode(folder.path)
-                                                navController.navigateSafely(
-                                                    Screen.PlaylistDetail.createRoute(
+                                                navController.navigateSafelyReplacing(
+                                                    route = Screen.PlaylistDetail.createRoute(
                                                         "${PlaylistViewModel.FOLDER_PLAYLIST_PREFIX}$encodedPath"
-                                                    )
+                                                    ),
+                                                    patternToPop = Screen.PlaylistDetail.route
                                                 )
                                             },
                                             onPlaySong = { song, queue ->
@@ -1599,7 +1673,13 @@ fun LibraryScreen(
                                             onSongSelectionToggle = onSongSelectionToggle,
                                             getSelectionIndex = playerViewModel.multiSelectionStateHolder::getSelectionIndex,
                                             onLocateCurrentSongVisibilityChanged = { foldersShowLocateButton = it },
-                                            onRegisterLocateCurrentSongAction = { foldersLocateAction = it }
+                                            onRegisterLocateCurrentSongAction = { foldersLocateAction = it },
+                                            pendingLocatePath = pendingFoldersLocatePath,
+                                            onClearPendingLocate = { pendingFoldersLocatePath = null },
+                                            onRequestCrossFolderLocate = { folderPath ->
+                                                pendingFoldersLocatePath = folderPath
+                                                playerViewModel.navigateToFolder(folderPath)
+                                            }
                                         )
                                     }
 
@@ -1622,32 +1702,18 @@ fun LibraryScreen(
                         }
                     }
                 }
-                if (playerUiState.isGeneratingAiMetadata) {
-                    Surface( // Fondo semitransparente para el indicador
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                LoadingIndicator(modifier = Modifier.size(64.dp))
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    text = stringResource(R.string.presentation_batch_d_generating_ai_metadata),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
-                } else if (
-                    playerUiState.isSyncingLibrary ||
+                if (
+                    isLibraryContentEmpty &&
                     (
-                            (playerUiState.isLoadingInitialSongs || playerUiState.isLoadingLibraryCategories) &&
-                                    isLibraryContentEmpty
+                            playerUiState.isSyncingLibrary ||
+                                    playerUiState.isLoadingInitialSongs ||
+                                    playerUiState.isLoadingLibraryCategories
                             )
                 ) {
-                    // P1-1: LibrarySyncOverlay reads syncProgress internally so that sync progress
-                    // ticks don't trigger recomposition of the entire LibraryScreen.
+                    // The full-screen overlay is reserved for first-launch / empty library
+                    // states. Once the user has content, in-place indicators (pull-to-refresh
+                    // spinner + LibraryInlineSyncIndicator) handle sync feedback so the
+                    // list stays visible.
                     LibrarySyncOverlay(syncManager = syncManager)
                 }
             }
@@ -1656,7 +1722,7 @@ fun LibraryScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .height(170.dp)
+                    .height(bottomGradientHeight)
                     .background(
                         brush = Brush.verticalGradient(
                             colorStops = arrayOf(
@@ -1688,7 +1754,7 @@ fun LibraryScreen(
                 playerViewModel.clearAiPlaylistError()
                 showCreateAiPlaylistDialog = true
             } else {
-                Toast.makeText(context, context.getString(R.string.toast_set_ai_provider_api_key_first), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.library_toast_set_ai_provider_api_key_first), Toast.LENGTH_SHORT).show()
             }
         },
         isAiEnabled = hasActiveAiProviderApiKey,
@@ -1706,7 +1772,7 @@ fun LibraryScreen(
                 playerViewModel.clearAiPlaylistError()
                 showCreateAiPlaylistDialog = true
             } else {
-                Toast.makeText(context, context.getString(R.string.toast_set_gemini_api_key_first), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.library_toast_set_ai_provider_api_key_first), Toast.LENGTH_SHORT).show()
             }
         },
         onCreate = { name, imageUri, color, icon, songIds, cropScale, cropPanX, cropPanY, shapeType, d1, d2, d3, d4, smartRuleKey ->
@@ -1782,17 +1848,14 @@ fun LibraryScreen(
                 onDismiss = { showSongInfoBottomSheet = false },
                 onPlaySong = {
                     playerViewModel.showAndPlaySong(currentSong)
-                    showSongInfoBottomSheet = false
                 },
                 onAddToQueue = {
                     playerViewModel.addSongToQueue(currentSong) // Assumes such a method exists or will be added
-                    showSongInfoBottomSheet = false
-                    playerViewModel.sendToast(context.getString(R.string.toast_added_to_queue))
+                    playerViewModel.sendToast(context.getString(R.string.library_toast_added_to_queue))
                 },
                 onAddNextToQueue = {
                     playerViewModel.addSongNextToQueue(currentSong)
-                    showSongInfoBottomSheet = false
-                    playerViewModel.sendToast(context.getString(R.string.toast_playing_next))
+                    playerViewModel.sendToast(context.getString(R.string.library_toast_playing_next))
                 },
                 onAddToPlayList = {
                     playlistSheetSongs = listOf(currentSong)
@@ -1800,25 +1863,43 @@ fun LibraryScreen(
                 },
                 onDeleteFromDevice = playerViewModel::deleteFromDevice,
                 onNavigateToAlbum = {
-                    navController.navigateSafely(Screen.AlbumDetail.createRoute(currentSong.albumId))
+                    navController.navigateSafelyReplacing(
+                        route = Screen.AlbumDetail.createRoute(currentSong.albumId),
+                        patternToPop = Screen.AlbumDetail.route
+                    )
                     showSongInfoBottomSheet = false
                 },
                 onNavigateToArtist = {
-                    navController.navigateSafely(Screen.ArtistDetail.createRoute(currentSong.artistId))
+                    navController.navigateSafelyReplacing(
+                        route = Screen.ArtistDetail.createRoute(currentSong.artistId),
+                        patternToPop = Screen.ArtistDetail.route
+                    )
+                    showSongInfoBottomSheet = false
+                },
+                onNavigateToArtistById = { artistId ->
+                    navController.navigateSafelyReplacing(
+                        route = Screen.ArtistDetail.createRoute(artistId),
+                        patternToPop = Screen.ArtistDetail.route
+                    )
                     showSongInfoBottomSheet = false
                 },
                 onNavigateToGenre = {
                     currentSong.genre?.let {
-                        navController.navigateSafely(Screen.GenreDetail.createRoute(java.net.URLEncoder.encode(it, "UTF-8")))
+                        navController.navigateSafelyReplacing(
+                            route = Screen.GenreDetail.createRoute(java.net.URLEncoder.encode(it, "UTF-8")),
+                            patternToPop = Screen.GenreDetail.route
+                        )
                     }
                     showSongInfoBottomSheet = false
                 },
-                onEditSong = { newTitle, newArtist, newAlbum, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+                onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
                     playerViewModel.editSongMetadata(
                         currentSong,
                         newTitle,
                         newArtist,
                         newAlbum,
+                        newAlbumArtist,
+                        newComposer,
                         newGenre,
                         newLyrics,
                         newTrackNumber,
@@ -1827,9 +1908,6 @@ fun LibraryScreen(
                         replayGainAlbumGainDb,
                         coverArtUpdate
                     )
-                },
-                generateAiMetadata = { fields ->
-                    playerViewModel.generateAiMetadata(currentSong, fields)
                 },
                 removeFromListTrigger = {},
                 songInfoViewModel = songInfoBottomSheetViewModel
@@ -1893,6 +1971,10 @@ fun LibraryScreen(
                         onComplete(true)
                     }
                 }
+            },
+            onBatchEdit = {
+                showMultiSelectionSheet = false
+                showBatchEditSheet = true
             }
         )
     }
@@ -1917,6 +1999,15 @@ fun LibraryScreen(
                 playerViewModel.addSelectedAlbumsToQueue(selectedAlbums)
                 selectedAlbums = emptyList()
                 showAlbumMultiSelectionSheet = false
+            },
+            onAddToPlaylist = {
+                scope.launch {
+                    val songs = playerViewModel.getSongsForAlbums(selectedAlbums)
+                    playlistSheetSongs = songs
+                    showPlaylistBottomSheet = true
+                    selectedAlbums = emptyList()
+                    showAlbumMultiSelectionSheet = false
+                }
             }
         )
     }
@@ -2003,22 +2094,22 @@ fun LibraryScreen(
                 pendingMergePlaylistIds = emptyList()
                 mergePlaylistName = ""
             },
-            title = { Text(stringResource(R.string.presentation_batch_d_merge_playlists_title)) },
+            title = { Text(stringResource(R.string.merge_playlists_dialog_title)) },
             text = {
                 Column {
-                    Text(stringResource(R.string.presentation_batch_d_merge_playlists_prompt))
+                    Text(stringResource(R.string.merge_playlists_dialog_prompt))
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = mergePlaylistName,
                         onValueChange = { mergePlaylistName = it },
-                        placeholder = { Text(stringResource(R.string.presentation_batch_d_merge_playlists_placeholder)) },
+                        placeholder = { Text(stringResource(R.string.merge_playlists_dialog_placeholder)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = stringResource(
-                            R.string.presentation_batch_d_merge_playlists_body,
+                            R.string.merge_playlists_dialog_body,
                             pendingMergePlaylistIds.size
                         ),
                         style = MaterialTheme.typography.bodySmall,
@@ -2041,7 +2132,7 @@ fun LibraryScreen(
                         }
                     }
                 ) {
-                    Text(stringResource(R.string.action_merge))
+                    Text(stringResource(R.string.common_merge))
                 }
             },
             dismissButton = {
@@ -2050,8 +2141,34 @@ fun LibraryScreen(
                     pendingMergePlaylistIds = emptyList()
                     mergePlaylistName = ""
                 }) {
-                    Text(stringResource(R.string.cancel))
+                    Text(stringResource(R.string.common_cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+            }
+        )
+    }
+
+    // Batch Edit Sheet
+    if (showBatchEditSheet && selectedSongs.isNotEmpty()) {
+        EditMultipleSongsSheet(
+            visible = showBatchEditSheet,
+            songs = selectedSongs,
+            onDismiss = { showBatchEditSheet = false },
+            onSave = { songs, title, artist, album, albumArtist, composer, genre, lyrics, trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+                playerViewModel.saveBatchMetadata(
+                    songs = songs,
+                    title = title,
+                    artist = artist,
+                    album = album,
+                    albumArtist = albumArtist,
+                    composer = composer,
+                    genre = genre,
+                    lyrics = lyrics,
+                    trackNumber = trackNumber,
+                    discNumber = discNumber,
+                    replayGainTrackGainDb = replayGainTrackGainDb,
+                    replayGainAlbumGainDb = replayGainAlbumGainDb,
+                    coverArtUpdate = coverArtUpdate
+                )
             }
         )
     }
@@ -2095,6 +2212,77 @@ private fun CompactLibraryPagerIndicator(
 }
 
 /**
+ * Slim, non-intrusive indicator for sync work that should not keep the list pulled
+ * down: automatic startup syncs, background maintenance, and manual refreshes after
+ * the short pull-to-refresh confirmation window. It sits just below
+ * [LibraryActionRow] and collapses to zero height when not active.
+ *
+ * Distinct from [LibrarySyncOverlay], which is reserved for initial empty-library
+ * loads. The parent screen also gates this indicator off while the pull spinner is
+ * visible, so the two feedback channels do not compete.
+ */
+@Composable
+private fun LibraryInlineSyncIndicator(
+    visible: Boolean,
+    syncManager: com.theveloper.pixelplay.data.worker.SyncManager
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = androidx.compose.animation.expandVertically(
+            expandFrom = Alignment.Top,
+            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+        ) + androidx.compose.animation.fadeIn(animationSpec = tween(180)),
+        exit = androidx.compose.animation.shrinkVertically(
+            shrinkTowards = Alignment.Top,
+            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+        ) + androidx.compose.animation.fadeOut(animationSpec = tween(160))
+    ) {
+        // Collected inside this subtree so progress ticks don't recompose the
+        // parent screen — same pattern as LibrarySyncOverlay.
+        val syncProgress by syncManager.syncProgress
+            .collectAsStateWithLifecycle(initialValue = SyncProgress())
+
+        val phaseLabel = when (syncProgress.phase) {
+            SyncProgress.SyncPhase.FETCHING_MEDIASTORE ->
+                stringResource(R.string.library_sync_scanning)
+            SyncProgress.SyncPhase.PROCESSING_FILES,
+            SyncProgress.SyncPhase.SAVING_TO_DATABASE ->
+                stringResource(R.string.library_sync_processing)
+            SyncProgress.SyncPhase.SCANNING_LRC ->
+                stringResource(R.string.library_sync_lyrics)
+            SyncProgress.SyncPhase.CLEANING_CACHE ->
+                stringResource(R.string.library_sync_cache)
+            SyncProgress.SyncPhase.SYNCING_CLOUD ->
+                stringResource(R.string.library_sync_cloud)
+            else ->
+                stringResource(R.string.library_sync_in_progress)
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = phaseLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            LinearWavyProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            )
+        }
+    }
+}
+
+/**
  * P1-1: Isolated sync/loading overlay composable.
  *
  * By collecting [SyncManager.syncProgress] HERE instead of in the parent [LibraryScreen],
@@ -2127,7 +2315,7 @@ private fun LibrarySyncOverlay(syncManager: com.theveloper.pixelplay.data.worker
                     LoadingIndicator(modifier = Modifier.size(64.dp))
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = stringResource(R.string.syncing_library),
+                        text = stringResource(R.string.library_syncing),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -2389,7 +2577,7 @@ fun LibraryNavigationPill(
                     Icon(
                         modifier = Modifier.rotate(arrowRotation),
                         imageVector = Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = stringResource(R.string.presentation_batch_d_expand_tab_menu_cd),
+                        contentDescription = stringResource(R.string.library_cd_expand_tab_menu),
                         tint = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
@@ -2458,12 +2646,12 @@ private fun LibraryTabSwitcherSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = stringResource(R.string.presentation_batch_d_library_tabs_sheet_title),
+                text = stringResource(R.string.library_tabs_sheet_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontFamily = GoogleSansRounded
             )
             Text(
-                text = stringResource(R.string.presentation_batch_d_library_tabs_sheet_subtitle),
+                text = stringResource(R.string.library_tabs_sheet_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2512,7 +2700,7 @@ private fun LibraryTabSwitcherSheet(
                                 contentDescription = null
                             )
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text(stringResource(R.string.presentation_batch_d_reorder_tabs_label))
+                            Text(stringResource(R.string.library_reorder_tabs_label))
                         }
                     }
                 }
@@ -2557,7 +2745,7 @@ private fun LibraryTabGridItem(
             ) {
                 Icon(
                     painter = painterResource(id = tabId.iconRes()),
-                    contentDescription = tabId.title,
+                    contentDescription = stringResource(tabId.titleRes),
                     tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
@@ -2615,13 +2803,11 @@ private fun LibraryTabId.iconRes(): Int = when (this) {
     LibraryTabId.ARTISTS -> R.drawable.rounded_artist_24
     LibraryTabId.PLAYLISTS -> R.drawable.rounded_playlist_play_24
     LibraryTabId.FOLDERS -> R.drawable.rounded_folder_24
-    LibraryTabId.LIKED -> R.drawable.rounded_favorite_24
+    LibraryTabId.LIKED -> R.drawable.round_favorite_24
 }
 
-private fun LibraryTabId.displayTitle(): String =
-    title.lowercase().replaceFirstChar { char ->
-        if (char.isLowerCase()) char.titlecase(Locale.getDefault()) else char.toString()
-    }
+@Composable
+private fun LibraryTabId.displayTitle(): String = stringResource(titleRes)
 
 internal fun resolveFolderNavigationDirection(initialPath: String?, targetPath: String?): Int =
     when {
@@ -2650,7 +2836,7 @@ fun LibraryFoldersTab(
     onFolderClick: (String) -> Unit,
     onFolderAsPlaylistClick: (MusicFolder) -> Unit,
     onPlaySong: (Song, List<Song>) -> Unit,
-    stablePlayerState: StablePlayerState,
+    playerViewModel: PlayerViewModel,
     bottomBarHeight: Dp,
     onMoreOptionsClick: (Song) -> Unit,
     isPlaylistView: Boolean = false,
@@ -2663,7 +2849,10 @@ fun LibraryFoldersTab(
     onSongSelectionToggle: (Song) -> Unit = {},
     getSelectionIndex: (String) -> Int? = { null },
     onLocateCurrentSongVisibilityChanged: (Boolean) -> Unit = {},
-    onRegisterLocateCurrentSongAction: ((() -> Unit)?) -> Unit = {}
+    onRegisterLocateCurrentSongAction: ((() -> Unit)?) -> Unit = {},
+    pendingLocatePath: String? = null,
+    onClearPendingLocate: () -> Unit = {},
+    onRequestCrossFolderLocate: (String) -> Unit = {}
 ) {
     // List state moved inside AnimatedContent to prevent state sharing issues during transitions
 
@@ -2713,22 +2902,60 @@ fun LibraryFoldersTab(
         val songsToShow = remember(activeFolder, currentSortOption) {
             sortSongsForFolderView(activeFolder?.songs ?: emptyList(), currentSortOption)
         }.toImmutableList()
-        val currentSongId = stablePlayerState.currentSong?.id
+        val currentSong by remember(playerViewModel) {
+            playerViewModel.stablePlayerState
+                .map { it.currentSong }
+                .distinctUntilChanged()
+        }.collectAsStateWithLifecycle(initialValue = null)
+
+        val currentSongId = currentSong?.id
         val currentSongIndexInSongs = remember(songsToShow, currentSongId) {
             currentSongId?.let { songId -> songsToShow.indexOfFirst { it.id == songId } } ?: -1
         }
         val currentSongListIndex = remember(itemsToShow.size, currentSongIndexInSongs) {
             if (currentSongIndexInSongs < 0) -1 else itemsToShow.size + currentSongIndexInSongs
         }
-        val locateCurrentSongAction: (() -> Unit)? = remember(currentSongListIndex, listState) {
-            if (currentSongListIndex < 0) {
-                null
-            } else {
-                {
-                    coroutineScope.launch {
-                        listState.animateScrollToItem(currentSongListIndex)
+        val hasCurrentSong by remember(playerViewModel) {
+            playerViewModel.stablePlayerState
+                .map { it.currentSong != null && it.currentSong != Song.emptySong() }
+                .distinctUntilChanged()
+        }.collectAsStateWithLifecycle(initialValue = false)
+        val songInCurrentFolder = currentSongIndexInSongs >= 0
+        val currentSongParentPath: String? = remember(currentSong?.path) {
+            currentSong?.path
+                ?.takeIf { it.startsWith("/") }
+                ?.let { File(it).parentFile?.absolutePath }
+        }
+        val canCrossFolderLocate = remember(
+            playlistMode,
+            songInCurrentFolder,
+            currentSongParentPath,
+            currentFolder?.path
+        ) {
+            !playlistMode &&
+                !songInCurrentFolder &&
+                currentSongParentPath != null &&
+                currentSongParentPath != currentFolder?.path
+        }
+        val locateCurrentSongAction: (() -> Unit)? = remember(
+            songInCurrentFolder,
+            canCrossFolderLocate,
+            currentSongListIndex,
+            listState,
+            currentSongParentPath
+        ) {
+            when {
+                songInCurrentFolder -> {
+                    {
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(currentSongListIndex)
+                        }
                     }
                 }
+                canCrossFolderLocate && currentSongParentPath != null -> {
+                    { onRequestCrossFolderLocate(currentSongParentPath) }
+                }
+                else -> null
             }
         }
 
@@ -2750,7 +2977,24 @@ fun LibraryFoldersTab(
             pendingFolderSortScrollReset = false
         }
 
-        LaunchedEffect(currentSongListIndex, itemsToShow, songsToShow, listState) {
+        LaunchedEffect(
+            currentFolder?.path,
+            pendingLocatePath,
+            currentSongListIndex,
+            songsToShow
+        ) {
+            val pending = pendingLocatePath ?: return@LaunchedEffect
+            if (currentFolder?.path != pending) return@LaunchedEffect
+            if (currentSongListIndex < 0) return@LaunchedEffect
+            listState.animateScrollToItem(currentSongListIndex)
+            onClearPendingLocate()
+        }
+
+        LaunchedEffect(currentSongListIndex, itemsToShow, songsToShow, listState, canCrossFolderLocate) {
+            if (canCrossFolderLocate) {
+                visibilityCallback(true)
+                return@LaunchedEffect
+            }
             if (currentSongListIndex < 0 || songsToShow.isEmpty()) {
                 visibilityCallback(false)
                 return@LaunchedEffect
@@ -2811,9 +3055,10 @@ fun LibraryFoldersTab(
                         }
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
+                            val showScrollbar = LocalShowScrollbar.current && (listState.canScrollForward || listState.canScrollBackward)
                             LazyColumn(
                                 modifier = Modifier
-                                    .padding(start = 12.dp, end = if (listState.canScrollForward || listState.canScrollBackward) 22.dp else 12.dp)
+                                    .padding(start = 12.dp, end = if (showScrollbar) 22.dp else 12.dp)
                                     .fillMaxSize()
                                     .clip(
                                         RoundedCornerShape(
@@ -2827,7 +3072,8 @@ fun LibraryFoldersTab(
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                                 contentPadding = PaddingValues(
                                     bottom = bottomBarHeight + MiniPlayerHeight + ListExtraBottomGap,
-                                    top = 0.dp                            )
+                                    top = 0.dp
+                                )
                             ) {
                                 if (showPlaylistCards) {
                                     items(itemsToShow, key = { it.path }, contentType = { "folder_card" }) { folder ->
@@ -2846,26 +3092,19 @@ fun LibraryFoldersTab(
                                 }
 
                                 items(songsToShow, key = { it.id }, contentType = { "song" }) { song ->
-                                    EnhancedSongListItem(
+                                    LibraryPlaybackAwareSongItem(
                                         song = song,
-                                        isPlaying = stablePlayerState.currentSong?.id == song.id && stablePlayerState.isPlaying,
-                                        isCurrentSong = stablePlayerState.currentSong?.id == song.id,
-                                        onMoreOptionsClick = { onMoreOptionsClick(song) },
+                                        playerViewModel = playerViewModel,
                                         isSelected = selectedSongIds.contains(song.id),
                                         selectionIndex = if (isSelectionMode) getSelectionIndex(song.id) else null,
                                         isSelectionMode = isSelectionMode,
                                         onLongPress = { onSongLongPress(song) },
+                                        onMoreOptionsClick = { onMoreOptionsClick(song) },
                                         onClick = {
                                             if (isSelectionMode) {
                                                 onSongSelectionToggle(song)
                                             } else {
-                                                val songIndex = songsToShow.indexOf(song)
-                                                if (songIndex != -1) {
-                                                    val songsToPlay =
-                                                        songsToShow.subList(songIndex, songsToShow.size)
-                                                            .toList()
-                                                    onPlaySong(song, songsToPlay)
-                                                }
+                                                onPlaySong(song, songsToShow)
                                             }
                                         }
                                     )
@@ -2873,7 +3112,7 @@ fun LibraryFoldersTab(
                             }
 
                             // ScrollBar Overlay
-                            val bottomPadding = if (stablePlayerState.currentSong != null && stablePlayerState.currentSong != Song.emptySong())
+                            val bottomPadding = if (hasCurrentSong)
                                 bottomBarHeight + MiniPlayerHeight + 16.dp
                             else
                                 bottomBarHeight + 16.dp
@@ -2945,7 +3184,7 @@ fun FolderListItem(folder: MusicFolder, onClick: () -> Unit) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 painter = painterResource(id = R.drawable.ic_folder),
-                contentDescription = stringResource(R.string.presentation_batch_d_cd_folder),
+                contentDescription = stringResource(R.string.library_cd_folder),
                 modifier = Modifier
                     .size(48.dp)
                     .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
@@ -3154,7 +3393,7 @@ fun AlbumGridItemRedesigned(
                         var isLoadingImage by remember { mutableStateOf(true) }
                         SmartImage(
                             model = album.albumArtUriString,
-                            contentDescription = stringResource(R.string.cd_album_art_for_title, album.title),
+                            contentDescription = stringResource(R.string.common_album_art_for_title, album.title),
                             contentScale = ContentScale.Crop,
                             // Reducido el tamaño para mejorar el rendimiento del scroll, como se sugiere en el informe.
                             // ContentScale.Crop se encargará de ajustar la imagen al aspect ratio.
@@ -3287,7 +3526,7 @@ fun ArtistListItem(artist: Artist, onClick: () -> Unit, isLoading: Boolean = fal
                     } else {
                         Icon(
                             painter = painterResource(R.drawable.rounded_artist_24),
-                            contentDescription = stringResource(R.string.presentation_batch_d_cd_artist),
+                            contentDescription = stringResource(R.string.common_artist),
                             modifier = Modifier.padding(8.dp),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -3421,7 +3660,7 @@ fun AlbumListItem(
                         var isLoadingImage by remember { mutableStateOf(true) }
                         SmartImage(
                             model = album.albumArtUriString,
-                            contentDescription = stringResource(R.string.cd_album_art_for_title, album.title),
+                            contentDescription = stringResource(R.string.common_album_art_for_title, album.title),
                             contentScale = ContentScale.Crop,
                             targetSize = Size(256, 256),
                             modifier = Modifier.fillMaxSize(),

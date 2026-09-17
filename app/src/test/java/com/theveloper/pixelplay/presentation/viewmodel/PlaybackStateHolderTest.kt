@@ -14,8 +14,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import androidx.media3.session.MediaController
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @ExtendWith(MainCoroutineExtension::class)
@@ -25,7 +27,6 @@ class PlaybackStateHolderTest {
     private val userPreferencesRepository: UserPreferencesRepository = mockk(relaxed = true)
     private val castStateHolder: CastStateHolder = mockk(relaxed = true)
     private val queueStateHolder: QueueStateHolder = mockk(relaxed = true)
-    private val listeningStatsTracker: ListeningStatsTracker = mockk(relaxed = true)
     private val appContext: Context = mockk(relaxed = true)
     private val powerManager: PowerManager = mockk(relaxed = true)
 
@@ -34,7 +35,6 @@ class PlaybackStateHolderTest {
         userPreferencesRepository = userPreferencesRepository,
         castStateHolder = castStateHolder,
         queueStateHolder = queueStateHolder,
-        listeningStatsTracker = listeningStatsTracker,
         appContext = appContext
     )
 
@@ -70,6 +70,36 @@ class PlaybackStateHolderTest {
         holder.syncCurrentPositionFromPlayer("duplicate-song", 0L)
 
         assertEquals(0L, holder.currentPosition.value)
+    }
+
+    @Test
+    fun `clearing latest media controller restores previous activity controller`() {
+        val holder = createHolder()
+        val mainController = mockk<MediaController>(relaxed = true)
+        val externalController = mockk<MediaController>(relaxed = true)
+
+        holder.setMediaController(mainController)
+        holder.setMediaController(externalController)
+
+        assertSame(externalController, holder.mediaController)
+
+        holder.clearMediaController(externalController)
+
+        assertSame(mainController, holder.mediaController)
+    }
+
+    @Test
+    fun `clearing stale media controller keeps active controller`() {
+        val holder = createHolder()
+        val mainController = mockk<MediaController>(relaxed = true)
+        val externalController = mockk<MediaController>(relaxed = true)
+
+        holder.setMediaController(externalController)
+        holder.setMediaController(mainController)
+
+        holder.clearMediaController(externalController)
+
+        assertSame(mainController, holder.mediaController)
     }
 
     @Test

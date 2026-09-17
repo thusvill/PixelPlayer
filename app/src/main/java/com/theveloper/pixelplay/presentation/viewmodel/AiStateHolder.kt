@@ -4,10 +4,8 @@ package com.theveloper.pixelplay.presentation.viewmodel
 import android.content.Context
 import com.theveloper.pixelplay.R
 import com.theveloper.pixelplay.data.DailyMixManager
-import com.theveloper.pixelplay.data.ai.AiMetadataGenerator
 import com.theveloper.pixelplay.data.ai.AiNotificationManager
 import com.theveloper.pixelplay.data.ai.AiPlaylistGenerator
-import com.theveloper.pixelplay.data.ai.SongMetadata
 import com.theveloper.pixelplay.data.ai.AiSystemPromptType
 import com.theveloper.pixelplay.data.ai.provider.AiProviderException
 import com.theveloper.pixelplay.data.preferences.PlaylistPreferencesRepository
@@ -30,11 +28,11 @@ import javax.inject.Singleton
 class AiStateHolder @Inject constructor(
     @ApplicationContext private val context: Context,
     private val aiPlaylistGenerator: AiPlaylistGenerator,
-    private val aiMetadataGenerator: AiMetadataGenerator,
     private val dailyMixManager: DailyMixManager,
     private val playlistPreferencesRepository: PlaylistPreferencesRepository,
     private val dailyMixStateHolder: DailyMixStateHolder,
-    private val notificationManager: AiNotificationManager
+    private val notificationManager: AiNotificationManager,
+    private val aiHandler: com.theveloper.pixelplay.data.ai.AiHandler
 ) {
     // State
     // AI State Management: Observables for tracking background generation progress
@@ -43,12 +41,6 @@ class AiStateHolder @Inject constructor(
 
     private val _isGeneratingAiPlaylist = MutableStateFlow(false)
     val isGeneratingAiPlaylist = _isGeneratingAiPlaylist.asStateFlow()
-
-    private val _isGeneratingMetadata = MutableStateFlow(false)
-    val isGeneratingMetadata = _isGeneratingMetadata.asStateFlow()
-
-    private val _aiMetadataSuccess = MutableStateFlow(false)
-    val aiMetadataSuccess = _aiMetadataSuccess.asStateFlow()
 
     private val _aiSuccess = MutableStateFlow(false)
     val aiSuccess = _aiSuccess.asStateFlow()
@@ -62,10 +54,6 @@ class AiStateHolder @Inject constructor(
     private var _lastPlaylistPrompt: String? = null
     private var _lastMinLength: Int = 5
     private var _lastMaxLength: Int = 15
-
-    // Metadata Retry Cache: Stores parameters for the last metadata generation
-    private var _lastMetadataSong: Song? = null
-    private var _lastMetadataFields: List<String>? = null
 
     private var scope: CoroutineScope? = null
     private var allSongsProvider: (suspend () -> List<Song>)? = null
@@ -110,7 +98,6 @@ class AiStateHolder @Inject constructor(
         _showAiPlaylistSheet.value = false
         _aiError.value = null
         _aiSuccess.value = false
-        _aiMetadataSuccess.value = false
         _isGeneratingAiPlaylist.value = false
         _aiStatus.value = null
     }
@@ -119,16 +106,6 @@ class AiStateHolder @Inject constructor(
         // Safe retry using cached prompt and length constraints
         val prompt = _lastPlaylistPrompt ?: return
         generateAiPlaylist(prompt, _lastMinLength, _lastMaxLength)
-    }
-
-    fun retryLastMetadataGeneration() {
-        // Safe retry for metadata using cached song and requested fields
-        val song = _lastMetadataSong ?: return
-        val fields = _lastMetadataFields ?: return
-        
-        scope?.launch {
-            generateAiMetadata(song, fields)
-        }
     }
 
     fun clearAiPlaylistError() {
@@ -220,7 +197,7 @@ class AiStateHolder @Inject constructor(
                         }
                     } else {
                         _aiStatus.value = null
-                        _aiError.value = context.getString(R.string.ai_no_songs_found)
+                        _aiError.value = context.getString(R.string.ai_state_no_songs_found)
                         notificationManager.hideProgress()
                     }
                 }.onFailure { error ->
@@ -254,7 +231,7 @@ class AiStateHolder @Inject constructor(
             val allSongs = allSongsProvider?.invoke() ?: emptyList()
             val favoriteIds = favoriteSongIdsProvider?.invoke() ?: emptySet()
             if (prompt.isBlank()) {
-                toastEmitter?.invoke(context.getString(R.string.ai_prompt_empty))
+                toastEmitter?.invoke(context.getString(R.string.ai_state_prompt_empty))
                 return@launch
             }
 
@@ -286,20 +263,20 @@ class AiStateHolder @Inject constructor(
                 result.onSuccess { generatedSongs ->
                     if (generatedSongs.isNotEmpty()) {
                         dailyMixStateHolder.setDailyMixSongs(generatedSongs)
-                        toastEmitter?.invoke(context.getString(R.string.ai_daily_mix_updated))
+                        toastEmitter?.invoke(context.getString(R.string.ai_state_daily_mix_updated))
                     } else {
-                        toastEmitter?.invoke(context.getString(R.string.ai_no_songs_for_mix))
+                        toastEmitter?.invoke(context.getString(R.string.ai_state_no_songs_for_mix))
                     }
                 }.onFailure { error ->
                     Timber.tag("AiPlaylist").e(error, "Daily Mix refinement failed")
                     val detail = extractAiErrorDetail(error)
                     _aiError.value = resolveAiErrorMessage(error)
-                    toastEmitter?.invoke(context.getString(R.string.could_not_update, detail))
+                    toastEmitter?.invoke(context.getString(R.string.ai_state_could_not_update, detail))
                 }
             } catch (e: Exception) {
                 Timber.tag("AiPlaylist").e(e, "Daily Mix refinement threw unhandled exception")
                 _aiError.value = resolveAiErrorMessage(e)
-                toastEmitter?.invoke(context.getString(R.string.could_not_update, extractAiErrorDetail(e)))
+                toastEmitter?.invoke(context.getString(R.string.ai_state_could_not_update, extractAiErrorDetail(e)))
             } finally {
                 _isGeneratingAiPlaylist.value = false
                 _aiStatus.value = null
@@ -307,35 +284,38 @@ class AiStateHolder @Inject constructor(
         }
     }
 
-    /**
-     * Fetches AI-generated metadata (tags, genre, lyrics) for a specific song.
-     * Updates internal success and error states for UI feedback.
-     */
-    suspend fun generateAiMetadata(song: Song, fields: List<String>): Result<SongMetadata> {
-        _lastMetadataSong = song
-        _lastMetadataFields = fields
-        
-        _isGeneratingMetadata.value = true
-        _aiMetadataSuccess.value = false
-        _aiError.value = null
-        
+    suspend fun translateLyrics(lyricsText: String): Result<String> {
         return try {
-            val result = aiMetadataGenerator.generate(song, fields)
-            if (result.isSuccess) {
-                _aiMetadataSuccess.value = true
-                notificationManager.showCompletion("Metadata Enhanced", "Applied tags and genre refinements.")
-            } else {
-                result.exceptionOrNull()?.let {
-                    _aiError.value = resolveAiErrorMessage(it)
-                    notificationManager.showCompletion("Metadata Error", "Check your AI configuration.")
-                }
-            }
-            result
+            val targetLanguage = context.resources.configuration.locales[0].displayLanguage
+            val prompt = """
+<task>Translate song lyrics into $targetLanguage.</task>
+
+<rules>
+- Preserve ALL timestamps [mm:ss.xx] exactly — never modify, merge, or drop them.
+- Output TWO lines per original line: the original, then the translation with the same timestamp.
+- NEVER add explanations, labels, numbering, section headers, or formatting.
+- NEVER remove, merge, split, or reorder lines.
+- If lyrics are ALREADY mostly in $targetLanguage, output ONLY: ALREADY_IN_TARGET_LANGUAGE
+</rules>
+
+<format>
+[original timestamp] original text
+[same timestamp] translated text
+</format>
+
+<lyrics>
+$lyricsText
+</lyrics>
+            """.trimIndent()
+            
+            val response = aiHandler.generateContent(
+                prompt = prompt,
+                type = AiSystemPromptType.GENERAL,
+                temperature = 0.1f
+            )
+            Result.success(response)
         } catch (e: Exception) {
-            _aiError.value = resolveAiErrorMessage(e)
             Result.failure(e)
-        } finally {
-            _isGeneratingMetadata.value = false
         }
     }
 
@@ -353,14 +333,18 @@ class AiStateHolder @Inject constructor(
         val detail = extractAiErrorDetail(error)
 
         return when {
-            providerFailure?.isApiKeyIssue() == true || detail.contains("api key", ignoreCase = true) ->
-                context.getString(R.string.ai_error_api_key)
+            providerFailure?.isApiKeyIssue() == true ||
+                detail.contains("api key not valid", ignoreCase = true) ||
+                detail.contains("invalid api key", ignoreCase = true) ||
+                detail.contains("incorrect api key", ignoreCase = true) ||
+                detail.contains("invalid key", ignoreCase = true) ->
+                context.getString(R.string.ai_state_error_api_key)
 
             providerFailure?.isBillingIssue() == true ->
-                context.getString(R.string.ai_error_quota)
+                context.getString(R.string.ai_state_error_quota)
 
             providerFailure?.isModelUnavailable() == true ->
-                context.getString(R.string.ai_error_model_unavailable)
+                context.getString(R.string.ai_state_error_model_unavailable)
 
             // Timeout errors
             detail.contains("timed out", ignoreCase = true) || 
@@ -385,10 +369,12 @@ class AiStateHolder @Inject constructor(
             detail.contains("permission", ignoreCase = true) ||
             detail.contains("denied", ignoreCase = true) ||
             detail.contains("forbidden", ignoreCase = true) ||
-            detail.contains("unauthorized", ignoreCase = true) ||
-            detail.contains("401", ignoreCase = true) ||
             detail.contains("403", ignoreCase = true) ->
-                "Permission Denied. Your API key might be invalid, or it lacks the necessary permissions for this model."
+                "Permission denied by the AI provider. Check that this API key has access to the selected model and that the provider API is enabled."
+
+            detail.contains("unauthorized", ignoreCase = true) ||
+            detail.contains("401", ignoreCase = true) ->
+                context.getString(R.string.ai_state_error_api_key)
 
             // Rate limiting
             detail.contains("rate limit", ignoreCase = true) ||
@@ -411,7 +397,7 @@ class AiStateHolder @Inject constructor(
             // No API key configured
             detail.contains("No API key", ignoreCase = true) ||
             detail.contains("not configured", ignoreCase = true) ->
-                context.getString(R.string.ai_error_api_key)
+                context.getString(R.string.ai_state_error_api_key)
 
             // Cooldown
             detail.contains("cooldown", ignoreCase = true) ->
@@ -422,7 +408,7 @@ class AiStateHolder @Inject constructor(
                 "The AI returned an empty response. This typically means the model filtered the content. Try a different prompt."
 
             else ->
-                context.getString(R.string.ai_error_generic, detail)
+                context.getString(R.string.ai_state_error_generic, detail)
         }
     }
 

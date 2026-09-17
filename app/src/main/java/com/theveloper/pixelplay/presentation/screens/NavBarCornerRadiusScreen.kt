@@ -61,9 +61,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.theveloper.pixelplay.R
+import com.theveloper.pixelplay.data.preferences.MAX_NAV_BAR_CORNER_RADIUS
+import com.theveloper.pixelplay.data.preferences.MIN_NAV_BAR_CORNER_RADIUS
 import com.theveloper.pixelplay.presentation.viewmodel.SettingsViewModel
 import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
 import com.theveloper.pixelplay.data.preferences.NavBarStyle
@@ -100,14 +102,17 @@ fun NavBarCornerRadiusContent(
     isFullWidth: Boolean,
     isCompactMode: Boolean = false
 ) {
-    var sliderValue by remember { mutableFloatStateOf(initialRadius) }
+    fun Float.safeRadius(): Float =
+        coerceIn(MIN_NAV_BAR_CORNER_RADIUS.toFloat(), MAX_NAV_BAR_CORNER_RADIUS.toFloat())
+
+    var sliderValue by remember { mutableFloatStateOf(initialRadius.safeRadius()) }
     var hasBeenAdjusted by remember { mutableStateOf(sliderValue != DEFAULT_NAV_BAR_CORNER_RADIUS) }
 
     val haptic = LocalHapticFeedback.current
 
     // Sync if initial value changes externally (though unlikely in this flow, good practice)
     LaunchedEffect(initialRadius) {
-        sliderValue = initialRadius
+        sliderValue = initialRadius.safeRadius()
     }
     
     // Update hasBeenAdjusted when sliderValue changes relative to default
@@ -130,13 +135,13 @@ fun NavBarCornerRadiusContent(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                             )
                     ) {
-                        Icon(painterResource(R.drawable.rounded_arrow_back_24), contentDescription = stringResource(R.string.auth_cd_back), tint = MaterialTheme.colorScheme.onSurface)
+                        Icon(painterResource(R.drawable.rounded_arrow_back_24), contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onSurface)
                     }
                 },
                 actions = {
                     Button(
                         onClick = {
-                            onRadiusChange(sliderValue.toInt())
+                            onRadiusChange(sliderValue.toInt().coerceIn(MIN_NAV_BAR_CORNER_RADIUS, MAX_NAV_BAR_CORNER_RADIUS))
                             onDone()
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -151,7 +156,7 @@ fun NavBarCornerRadiusContent(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.size(8.dp))
-                        Text(stringResource(R.string.action_done))
+                        Text(stringResource(R.string.common_done))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -178,7 +183,7 @@ fun NavBarCornerRadiusContent(
                 Spacer(modifier = Modifier.height(24.dp))
                 
                 Text(
-                    text = stringResource(R.string.presentation_batch_b_navbar_adjust_title),
+                    text = stringResource(R.string.navbar_adjust_title),
                     style = MaterialTheme.typography.displaySmall.copy(
                         fontWeight = FontWeight.Bold
                     ),
@@ -189,7 +194,7 @@ fun NavBarCornerRadiusContent(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = stringResource(R.string.presentation_batch_b_navbar_adjust_subtitle),
+                    text = stringResource(R.string.navbar_adjust_subtitle),
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -225,7 +230,7 @@ fun NavBarCornerRadiusContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = stringResource(R.string.presentation_batch_b_corner_radius_label),
+                                text = stringResource(R.string.navbar_corner_radius_label),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -233,7 +238,7 @@ fun NavBarCornerRadiusContent(
                             if (hasBeenAdjusted) {
                                 FilledTonalButton(
                                     onClick = {
-                                        sliderValue = DEFAULT_NAV_BAR_CORNER_RADIUS
+                                        sliderValue = DEFAULT_NAV_BAR_CORNER_RADIUS.safeRadius()
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     },
                                     colors = ButtonDefaults.filledTonalButtonColors(
@@ -245,11 +250,11 @@ fun NavBarCornerRadiusContent(
                                 ) {
                                     Icon(
                                         Icons.Rounded.Refresh,
-                                        contentDescription = stringResource(R.string.cd_reset),
+                                        contentDescription = stringResource(R.string.common_reset),
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.size(6.dp))
-                                    Text(stringResource(R.string.action_reset), style = MaterialTheme.typography.labelMedium)
+                                    Text(stringResource(R.string.common_reset), style = MaterialTheme.typography.labelMedium)
                                 }
                             }
                         }
@@ -275,10 +280,10 @@ fun NavBarCornerRadiusContent(
                                             if (it.toInt() != sliderValue.toInt()) {
                                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             }
-                                            sliderValue = it
+                                            sliderValue = it.safeRadius()
                                         }
                                     },
-                                    valueRange = 0f..60f,
+                                    valueRange = MIN_NAV_BAR_CORNER_RADIUS.toFloat()..MAX_NAV_BAR_CORNER_RADIUS.toFloat(),
                                     colors = SliderDefaults.colors(
                                         thumbColor = MaterialTheme.colorScheme.primary,
                                         activeTrackColor = MaterialTheme.colorScheme.primary,
@@ -299,7 +304,7 @@ fun NavBarCornerRadiusContent(
                             Text(
                                 modifier = Modifier.width(46.dp),
                                 text = stringResource(
-                                    R.string.presentation_batch_b_corner_dp_format,
+                                    R.string.navbar_corner_dp_format,
                                     sliderValue.toInt()
                                 ),
                                 textAlign = TextAlign.Center,
